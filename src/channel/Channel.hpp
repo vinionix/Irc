@@ -2,7 +2,7 @@
 
 #include <iostream>
 #include <map>
-#include "Client.hpp"
+#include "../client/Client.hpp"
 #include <set>
 
 class Channel
