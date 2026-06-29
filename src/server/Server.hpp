@@ -8,6 +8,10 @@
 #include <sstream>
 #include <algorithm>
 #include <cctype>
+#include <sys/socket.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <netinet/in.h>
 
 class Server{
     private:
@@ -18,6 +22,7 @@ class Server{
 		std::map<int, Client>			_clientFds;
 		std::vector<Channel>			_channels;
 		std::vector<pollfd>				_pollFds;
+		struct sockaddr_in				_address;
 
 		void	validatePort(const std::string& port);
 		void	validatePassword(const std::string& password);
