@@ -40,7 +40,9 @@ void Server::validatePort(const std::string& port) {
 			throw std::runtime_error("Invalid port number!");
 		}
 	}
-	iss >> portNum;
+	if (!(iss >> portNum)) {
+		throw std::runtime_error("Invalid port number!");
+	}
 	_port = portNum;
 }
 
