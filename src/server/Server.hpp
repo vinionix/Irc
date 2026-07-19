@@ -26,7 +26,9 @@ class Server{
 
 		void	validatePort(const std::string& port);
 		void	validatePassword(const std::string& password);
+		pollfd	createPollFd(int fd);
     public:
 		Server(const std::string& port, const std::string& password);
+		void startPoll(void);
 		~Server();
 };

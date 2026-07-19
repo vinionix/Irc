@@ -13,6 +13,6 @@ class Client{
         std::string				_outputBuffer;
 		std::set<std::string>	_channels;
     public:
-        Client(/* args */);
+        Client(int fd);
         ~Client();
 };
