@@ -12,6 +12,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <netinet/in.h>
+#include <algorithm>
 
 class Server{
     private:
@@ -27,6 +28,7 @@ class Server{
 		void	validatePort(const std::string& port);
 		void	validatePassword(const std::string& password);
 		pollfd	createPollFd(int fd);
+		void 	disconnectClient(Client& client);
     public:
 		Server(const std::string& port, const std::string& password);
 		void startPoll(void);

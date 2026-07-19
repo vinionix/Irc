@@ -17,7 +17,10 @@ class Channel
         std::set<int>	_users;
         std::set<int>	_operators;
 		std::set<int>	_invitedUsers;
+
     public:
+        bool hasClient(int fd) const;
+        void removeClient(int fd);
         Channel(/* args */);
         ~Channel();
 };
