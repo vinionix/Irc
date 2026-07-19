@@ -72,15 +72,14 @@ void Server::disconnectClient(Client& client) {
 			}
 		}
 	}
-	_clientFds.erase(client.getFd());
 	for (size_t i = 0; i < _pollFds.size(); i++) {
 		if (_pollFds[i].fd == client.getFd()) {
 			_pollFds.erase(_pollFds.begin() + i);
 			break;
 		}
 	}
-	std::cout << "Client disconnected: " << client.getFd() << std::endl;
 	close(client.getFd());
+	_clientFds.erase(client.getFd());
 }
 
 void Server::startPoll(void) {
