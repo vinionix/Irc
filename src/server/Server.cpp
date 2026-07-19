@@ -5,26 +5,26 @@ Server::Server(const std::string& port, const std::string& password) {
 	validatePassword(password);
 
 	int opt = 1;
-	if ((_serverFd = socket(AF_INET, SOCK_STREAM, 0)) < 0){
+	if ((_serverFd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
 		close(_serverFd);
 		throw std::runtime_error("Failed to create socket!");
 	}
-	if (setsockopt(_serverFd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0){
+	if (setsockopt(_serverFd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
 		close(_serverFd);
 		throw std::runtime_error("Failed to set socket options!");
 	}
 	_address.sin_family = AF_INET;
 	_address.sin_addr.s_addr = INADDR_ANY;
 	_address.sin_port = htons(_port);
-	if (bind(_serverFd, (struct sockaddr *)&_address, sizeof(_address)) < 0){
+	if (bind(_serverFd, (struct sockaddr *)&_address, sizeof(_address)) < 0) {
 		close(_serverFd);
 		throw std::runtime_error("Failed to bind socket!");
 	}
-	if (fcntl(_serverFd, F_SETFL, O_NONBLOCK) < 0){
+	if (fcntl(_serverFd, F_SETFL, O_NONBLOCK) < 0) {
 		close(_serverFd);
 		throw std::runtime_error("Failed to set socket to non-blocking!");
 	}
-	if (listen(_serverFd, SOMAXCONN) < 0){
+	if (listen(_serverFd, SOMAXCONN) < 0) {
 		close(_serverFd);
 		throw std::runtime_error("Failed to listen on socket!");
 	}
@@ -51,6 +51,55 @@ void Server::validatePassword(const std::string& password) {
 		throw std::runtime_error("Invalid password!");
 	}
 	_password = password;
+}
+
+pollfd	Server::createPollFd(int fd) {
+	pollfd pfd;
+				
+	pfd.fd = fd;
+	pfd.events = POLLIN;
+	pfd.revents = 0;
+
+	return (pfd);
+}
+
+void Server::startPoll(void) {
+	_pollFds.push_back(createPollFd(_serverFd));
+
+	while(true) {
+		poll(_pollFds.data(), _pollFds.size(), -1);
+
+		for (size_t i = 0; i < _pollFds.size(); i++) {
+			if (!(_pollFds[i].revents & POLLIN))
+				continue;
+			if (_pollFds[i].fd == _serverFd) {
+				int clientFd;
+
+				if ((clientFd = accept(_serverFd, NULL, NULL)) == -1)
+					continue;
+
+				std::cout << "olá" << std::endl;
+
+				Client c(clientFd);
+
+				_clientFds.insert(std::make_pair(clientFd, c));
+
+				_pollFds.push_back(createPollFd(clientFd));
+			}
+			else {
+				char buffer[512];
+
+				int bytes = recv(_pollFds[i].fd, buffer, sizeof(buffer), 0);
+
+				if (bytes <= 0) {
+					// TODO: close socket and remove from poll and map
+				}
+				else {
+					// TODO: process client message (command)
+				}
+			}
+		}
+	}
 }
 
 Server::~Server() {
