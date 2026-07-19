@@ -7,6 +7,7 @@ int main(int ac, char **av) {
     }
     try {
         Server s(static_cast<const std::string>(av[1]), static_cast<const std::string>(av[2]));
+        s.startPoll();
     }
     catch (std::exception& e) {
 		std::cerr << e.what() << std::endl;

@@ -78,8 +78,6 @@ void Server::startPoll(void) {
 				if ((clientFd = accept(_serverFd, NULL, NULL)) == -1)
 					continue;
 
-				std::cout << "olá" << std::endl;
-
 				Client c(clientFd);
 
 				_clientFds.insert(std::make_pair(clientFd, c));
