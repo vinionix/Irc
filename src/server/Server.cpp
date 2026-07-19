@@ -3,31 +3,7 @@
 Server::Server(const std::string& port, const std::string& password) {
 	validatePort(port);
 	validatePassword(password);
-
-	int opt = 1;
-	if ((_serverFd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-		close(_serverFd);
-		throw std::runtime_error("Failed to create socket!");
-	}
-	if (setsockopt(_serverFd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
-		close(_serverFd);
-		throw std::runtime_error("Failed to set socket options!");
-	}
-	_address.sin_family = AF_INET;
-	_address.sin_addr.s_addr = INADDR_ANY;
-	_address.sin_port = htons(_port);
-	if (bind(_serverFd, (struct sockaddr *)&_address, sizeof(_address)) < 0) {
-		close(_serverFd);
-		throw std::runtime_error("Failed to bind socket!");
-	}
-	if (fcntl(_serverFd, F_SETFL, O_NONBLOCK) < 0) {
-		close(_serverFd);
-		throw std::runtime_error("Failed to set socket to non-blocking!");
-	}
-	if (listen(_serverFd, SOMAXCONN) < 0) {
-		close(_serverFd);
-		throw std::runtime_error("Failed to listen on socket!");
-	}
+	createAndConfigureSocket();
 }
 
 void Server::validatePort(const std::string& port) {
@@ -51,6 +27,34 @@ void Server::validatePassword(const std::string& password) {
 		throw std::runtime_error("Invalid password!");
 	}
 	_password = password;
+}
+
+void Server::createAndConfigureSocket() {
+	int opt = 1;
+
+	if ((_serverFd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+		close(_serverFd);
+		throw std::runtime_error("Failed to create socket!");
+	}
+	if (setsockopt(_serverFd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
+		close(_serverFd);
+		throw std::runtime_error("Failed to set socket options!");
+	}
+	_address.sin_family = AF_INET;
+	_address.sin_addr.s_addr = INADDR_ANY;
+	_address.sin_port = htons(_port);
+	if (bind(_serverFd, (struct sockaddr *)&_address, sizeof(_address)) < 0) {
+		close(_serverFd);
+		throw std::runtime_error("Failed to bind socket!");
+	}
+	if (fcntl(_serverFd, F_SETFL, O_NONBLOCK) < 0) {
+		close(_serverFd);
+		throw std::runtime_error("Failed to set socket to non-blocking!");
+	}
+	if (listen(_serverFd, SOMAXCONN) < 0) {
+		close(_serverFd);
+		throw std::runtime_error("Failed to listen on socket!");
+	}
 }
 
 pollfd	Server::createPollFd(int fd) {
@@ -112,7 +116,7 @@ void Server::startPoll(void) {
 					this->disconnectClient(_clientFds[_pollFds[i].fd]);
 				}
 				else {
-						
+
 				}
 			}
 		}

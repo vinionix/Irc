@@ -27,6 +27,7 @@ class Server{
 
 		void	validatePort(const std::string& port);
 		void	validatePassword(const std::string& password);
+		void	createAndConfigureSocket(void);
 		pollfd	createPollFd(int fd);
 		void 	disconnectClient(Client& client);
     public:
