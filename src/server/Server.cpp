@@ -63,6 +63,26 @@ pollfd	Server::createPollFd(int fd) {
 	return (pfd);
 }
 
+void Server::disconnectClient(Client& client) {
+	if (_channels.size() > 0) {
+		for (size_t j = 0; j < _channels.size(); j++) {
+			if (_channels[j].hasClient(client.getFd())) {
+				_channels[j].removeClient(client.getFd());
+				//Do something to notify the other clients in the channel that this client has disconnected
+			}
+		}
+	}
+	_clientFds.erase(client.getFd());
+	for (size_t i = 0; i < _pollFds.size(); i++) {
+		if (_pollFds[i].fd == client.getFd()) {
+			_pollFds.erase(_pollFds.begin() + i);
+			break;
+		}
+	}
+	std::cout << "Client disconnected: " << client.getFd() << std::endl;
+	close(client.getFd());
+}
+
 void Server::startPoll(void) {
 	_pollFds.push_back(createPollFd(_serverFd));
 
@@ -90,7 +110,7 @@ void Server::startPoll(void) {
 				int bytes = recv(_pollFds[i].fd, buffer, sizeof(buffer), 0);
 
 				if (bytes <= 0) {
-					// TODO: close socket and remove from poll and map
+						this->disconnectClient(_clientFds[_pollFds[i].fd]);
 				}
 				else {
 					// TODO: process client message (command)
