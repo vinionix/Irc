@@ -9,10 +9,10 @@ class Client{
         std::string				_username;
         bool					_isRegistered;
         bool					_PassOk;
-        std::string				_inputBuffer;
-        std::string				_outputBuffer;
 		std::set<std::string>	_channels;
     public:
+        char					_inputBuffer[1024];
+        char					_outputBuffer[1024];
         int getFd() const;
         Client();
         Client(int fd);

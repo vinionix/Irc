@@ -104,15 +104,15 @@ void Server::startPoll(void) {
 				_pollFds.push_back(createPollFd(clientFd));
 			}
 			else {
-				char buffer[512];
-
-				int bytes = recv(_pollFds[i].fd, buffer, sizeof(buffer), 0);
+				char* bufferInput = _clientFds[_pollFds[i].fd]._inputBuffer;
+				int size = sizeof(_clientFds[_pollFds[i].fd]._inputBuffer);
+				int bytes = recv(_pollFds[i].fd, bufferInput, size, 0);
 
 				if (bytes <= 0) {
-						this->disconnectClient(_clientFds[_pollFds[i].fd]);
+					this->disconnectClient(_clientFds[_pollFds[i].fd]);
 				}
 				else {
-					// TODO: process client message (command)
+						
 				}
 			}
 		}
