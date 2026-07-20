@@ -67,11 +67,23 @@ pollfd	Server::createPollFd(int fd) {
 	return (pfd);
 }
 
+void Server::processClientBuffer(Client& client) {
+	size_t pos;
+
+	while ((pos = client.inBuffer.find("\r\n")) != std::string::npos)
+	{
+	    std::string command = client.inBuffer.substr(0, pos);
+
+	    client.inBuffer.erase(0, pos + 2);
+	    // executeCommand(command); TODO
+	}
+}
+
 void Server::disconnectClient(Client& client) {
 	if (_channels.size() > 0) {
-		for (size_t j = 0; j < _channels.size(); j++) {
-			if (_channels[j].hasClient(client.getFd())) {
-				_channels[j].removeClient(client.getFd());
+		for (size_t i = 0; i < _channels.size(); i++) {
+			if (_channels[i].hasClient(client.getFd())) {
+				_channels[i].removeClient(client.getFd());
 				//Do something to notify the other clients in the channel that this client has disconnected
 			}
 		}
@@ -108,15 +120,15 @@ void Server::startPoll(void) {
 				_pollFds.push_back(createPollFd(clientFd));
 			}
 			else {
-				char* bufferInput = _clientFds[_pollFds[i].fd]._inputBuffer;
-				int size = sizeof(_clientFds[_pollFds[i].fd]._inputBuffer);
-				int bytes = recv(_pollFds[i].fd, bufferInput, size, 0);
+				char buffer[512];
 
-				if (bytes <= 0) {
-					this->disconnectClient(_clientFds[_pollFds[i].fd]);
-				}
+				int bytes = recv(_pollFds[i].fd, buffer, sizeof(buffer), 0);
+
+				if (bytes <= 0)
+					disconnectClient(_clientFds[_pollFds[i].fd]);
 				else {
-
+					_clientFds[_pollFds[i].fd].inBuffer.append(buffer, bytes);
+					processClientBuffer(_clientFds[_pollFds[i].fd]);
 				}
 			}
 		}

@@ -30,6 +30,7 @@ class Server{
 		void	createAndConfigureSocket(void);
 		pollfd	createPollFd(int fd);
 		void 	disconnectClient(Client& client);
+		void	processClientBuffer(Client& c);
     public:
 		Server(const std::string& port, const std::string& password);
 		void startPoll(void);
