@@ -11,10 +11,12 @@ class Client{
         bool					_PassOk;
 		std::set<std::string>	_channels;
     public:
-        char					_inputBuffer[1024];
-        char					_outputBuffer[1024];
-        int getFd() const;
         Client();
         Client(int fd);
         ~Client();
+
+        int getFd() const;
+
+        std::string             inBuffer;
+        std::string				outBuffer;
 };
