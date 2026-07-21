@@ -9,12 +9,14 @@ class Client{
         std::string				_username;
         bool					_isRegistered;
         bool					_PassOk;
-        std::string				_inputBuffer;
-        std::string				_outputBuffer;
 		std::set<std::string>	_channels;
     public:
-        int getFd() const;
         Client();
         Client(int fd);
         ~Client();
+
+        int getFd() const;
+
+        std::string             inBuffer;
+        std::string				outBuffer;
 };
