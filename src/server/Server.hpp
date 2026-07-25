@@ -14,7 +14,7 @@
 #include <netinet/in.h>
 #include <algorithm>
 
-class Server{
+class Server {
     private:
 		unsigned int					_port;
 		int								_serverFd;
@@ -31,8 +31,16 @@ class Server{
 		pollfd	createPollFd(int fd);
 		void 	disconnectClient(Client& client);
 		void	processClientBuffer(Client& c);
+
     public:
 		Server(const std::string& port, const std::string& password);
 		void startPoll(void);
 		~Server();
 };
+
+struct ParsedCommand {
+	std::string					command;
+	std::vector<std::string>	args;
+};
+
+ParsedCommand	parseCommand(std::string& line);
