@@ -67,15 +67,51 @@ pollfd	Server::createPollFd(int fd) {
 	return (pfd);
 }
 
+ParsedCommand parseCommand(std::string& line) {
+	std::istringstream	iss(line);
+	ParsedCommand		cmd;
+	std::string			token;
+
+	if (!(iss >> cmd.command))
+ 	   return cmd;
+
+	size_t trailingPos = line.find(" :");
+
+	while (iss >> token) {
+		if (token.at(0) == ':') {
+			if (trailingPos != std::string::npos)
+				token = line.substr(trailingPos + 2);
+			cmd.args.push_back(token);
+			break;
+		}
+		cmd.args.push_back(token);
+	}
+
+	// Temporary logs for commands and arguments
+	std::cout << "command: " << cmd.command << std::endl;
+	for (size_t i = 0; i < cmd.args.size(); i++) {
+		std::cout << "arg: " << cmd.args[i] << std::endl;
+	}
+	std::cout << std::endl;
+
+	return cmd;
+}
+
 void Server::processClientBuffer(Client& client) {
 	size_t pos;
 
-	while ((pos = client.inBuffer.find("\r\n")) != std::string::npos)
-	{
-	    std::string command = client.inBuffer.substr(0, pos);
+	while ((pos = client.inBuffer.find("\r\n")) != std::string::npos) {
+	    std::string line = client.inBuffer.substr(0, pos);
+
+		if (line.empty() || line.at(0) == ':')
+			break; //throw specific error for trailing at command
 
 	    client.inBuffer.erase(0, pos + 2);
-	    // executeCommand(command); TODO
+
+		ParsedCommand cmd = parseCommand(line);
+		if (cmd.command.empty())
+			break;
+	    //executeCommand(cmd); TODO
 	}
 }
 
