@@ -16,26 +16,35 @@
 
 class Server {
     private:
-		unsigned int					_port;
-		int								_serverFd;
-		std::string						_password;
-		bool							_isRunning;
-		std::map<int, Client>			_clientFds;
-		std::vector<Channel>			_channels;
-		std::vector<pollfd>				_pollFds;
-		struct sockaddr_in				_address;
+		struct sockaddr_in		_address;
+		std::map<int, Client>	_clientFds;
+		std::vector<Channel>	_channels;
+		std::vector<pollfd>		_pollFds;
+		std::string				_password;
+		unsigned int			_port;
+		int						_serverFd;
+		bool					_isRunning;
 
-		void	validatePort(const std::string& port);
-		void	validatePassword(const std::string& password);
-		void	createAndConfigureSocket(void);
-		pollfd	createPollFd(int fd);
-		void 	disconnectClient(Client& client);
-		void	processClientBuffer(Client& c);
+		CommandStatus	execute(Client&, const ParsedCommand&);
+		pollfd			createPollFd(int fd);
+		void			validatePort(const std::string& port);
+		void			validatePassword(const std::string& password);
+		void			createAndConfigureSocket(void);
+		void 			disconnectClient(Client&);
+		void			processClientBuffer(Client&);
+
 
     public:
 		Server(const std::string& port, const std::string& password);
 		void startPoll(void);
 		~Server();
+};
+
+enum CommandStatus
+{
+    CMD_OK,
+    CMD_ERROR,
+    CMD_DISCONNECT
 };
 
 struct ParsedCommand {

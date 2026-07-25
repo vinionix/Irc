@@ -67,6 +67,10 @@ pollfd	Server::createPollFd(int fd) {
 	return (pfd);
 }
 
+CommandStatus Server::execute(Client& client, const ParsedCommand& cmd) {
+
+}
+
 ParsedCommand parseCommand(std::string& line) {
 	std::istringstream	iss(line);
 	ParsedCommand		cmd;
@@ -111,7 +115,7 @@ void Server::processClientBuffer(Client& client) {
 		ParsedCommand cmd = parseCommand(line);
 		if (cmd.command.empty())
 			break;
-	    //executeCommand(cmd); TODO
+	    CommandStatus status = execute(client, cmd);
 	}
 }
 
