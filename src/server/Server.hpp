@@ -39,7 +39,6 @@ class Server {
 
     public:
 		Server(const std::string& port, const std::string& password);
-
 		void startPoll(void);
 
 		typedef void (Server::*CommandHandler)(Client&, const ParsedCommand&);

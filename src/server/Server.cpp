@@ -130,8 +130,19 @@ void Server::processClientBuffer(Client& client) {
 	}
 }
 
-void Server::handlePass(Client&, const ParsedCommand&) {
-
+void Server::handlePass(Client& client, const ParsedCommand& cmd) {
+	if (cmd.args.empty())
+		return;
+	if (cmd.args[0] == _password) {
+		client.setPassOk(true);
+		std::cout << "Client " << client.getFd() << " provided correct password.";
+	}
+	else {
+		client.setPassOk(false);
+		std::cout << "Client " << client.getFd() << " provided incorrect password.";
+		disconnectClient(client);
+		return;
+	}	
 }
 
 void Server::handleNick(Client&, const ParsedCommand&) {
