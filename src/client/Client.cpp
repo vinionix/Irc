@@ -16,6 +16,14 @@ Client::User& Client::getUser() {
     return _user;
 }
 
+std::string Client::getNick() const {
+    return _nickname;
+}
+
+void Client::setNickname(const std::string& nick) {
+    _nickname = nick;
+}
+
 Client::Client() : _clientFd(-1), _isRegistered(false), _passOk(false) {
 
 }
