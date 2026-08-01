@@ -18,6 +18,8 @@ class Client{
         int getFd() const;
         void setPassOk(bool passOk);
         bool getPassOk() const;
+        std::string getNick() const;
+        void setNickname(const std::string&);
 
         std::string             inBuffer;
         std::string				outBuffer;
