@@ -145,9 +145,10 @@ void Server::handlePass(Client& client, const ParsedCommand& cmd) {
 	}	
 }
 
-bool Server::nickAlreadyInUse(const std::string& nick) {
+bool Server::nickAlreadyInUse(const std::string& nick, int clientFd) {
 	for (size_t i = 0; i < _pollFds.size(); i++) {
-		if (nick == _clientFds[_pollFds.at(i).fd].getNick()) {
+		if (nick == _clientFds[_pollFds.at(i).fd].getNick()
+			&& _pollFds.at(i).fd != clientFd) {
 			return true;
 		}
 	}
@@ -164,8 +165,7 @@ bool Server::invalidNick(const std::string& nick) const {
         special.find(nick[0]) == std::string::npos)
         return true;
 
-    for (size_t i = 1; i < nick.length(); ++i)
-    {
+    for (size_t i = 1; i < nick.length(); ++i) {
         char c = nick[i];
 
         if (!std::isalnum(c) &&
@@ -184,7 +184,7 @@ void Server::handleNick(Client& client, const ParsedCommand& cmd) {
 	if (invalidNick(cmd.args.at(0))) {
 		return; // TODO: ERR_ERRONEUSNICKNAME (432)
 	}
-	if (nickAlreadyInUse(cmd.args.at(0))) {
+	if (nickAlreadyInUse(cmd.args.at(0), client.getFd())) {
 		return; //TODO: ERR_NICKNAMEINUSE (433)
 	}
 
