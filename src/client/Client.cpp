@@ -4,12 +4,19 @@ int Client::getFd() const {
     return _clientFd;
 }
 
-Client::Client() : _clientFd(-1), _isRegistered(false), _PassOk(false) {
+bool Client::getPassOk() const {
+    return _passOk;
+}
+
+void Client::setPassOk(bool passOk) {
+    _passOk = passOk;
+}
+
+Client::Client() : _clientFd(-1), _isRegistered(false), _passOk(false) {
 
 }
 
-Client::Client(int fd) : _clientFd(fd), _isRegistered(false), _PassOk(false) {
-
+Client::Client(int fd) : _clientFd(fd), _isRegistered(false), _passOk(false) {
 }
 
 Client::~Client() {

@@ -8,7 +8,7 @@ class Client{
         std::string				_nickname;
         std::string				_username;
         bool					_isRegistered;
-        bool					_PassOk;
+        bool					_passOk;
 		std::set<std::string>	_channels;
     public:
         Client();
@@ -16,6 +16,8 @@ class Client{
         ~Client();
 
         int getFd() const;
+        void setPassOk(bool passOk);
+        bool getPassOk() const;
 
         std::string             inBuffer;
         std::string				outBuffer;
