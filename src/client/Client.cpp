@@ -12,6 +12,10 @@ void Client::setPassOk(bool passOk) {
     _passOk = passOk;
 }
 
+Client::User& Client::getUser() {
+    return _user;
+}
+
 Client::Client() : _clientFd(-1), _isRegistered(false), _passOk(false) {
 
 }

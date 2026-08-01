@@ -6,7 +6,14 @@ class Client{
     private:
         int						_clientFd;
         std::string				_nickname;
-        std::string				_username;
+        struct                  User
+        {
+            std::string username;
+            std::string hostname;
+            std::string servername;
+            std::string realname;
+        };
+        User					_user;
         bool					_isRegistered;
         bool					_passOk;
 		std::set<std::string>	_channels;
@@ -16,8 +23,11 @@ class Client{
         ~Client();
 
         int getFd() const;
+        User& getUser();
         void setPassOk(bool passOk);
         bool getPassOk() const;
+        std::string getUsername() const;
+        std::string setUsername(std::string username);
 
         std::string             inBuffer;
         std::string				outBuffer;

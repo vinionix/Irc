@@ -131,15 +131,19 @@ void Server::processClientBuffer(Client& client) {
 }
 
 void Server::handlePass(Client& client, const ParsedCommand& cmd) {
+	if (client.getPassOk()) {
+		std::cout << "Client " << client.getFd() << " has already provided a password." << std::endl;
+		return;
+	}
 	if (cmd.args.empty())
 		return;
 	if (cmd.args[0] == _password) {
 		client.setPassOk(true);
-		std::cout << "Client " << client.getFd() << " provided correct password.";
+		std::cout << "Client " << client.getFd() << " provided correct password." << std::endl;
 	}
 	else {
 		client.setPassOk(false);
-		std::cout << "Client " << client.getFd() << " provided incorrect password.";
+		std::cout << "Client " << client.getFd() << " provided incorrect password."	<< std::endl;
 		disconnectClient(client);
 		return;
 	}	
@@ -149,8 +153,19 @@ void Server::handleNick(Client&, const ParsedCommand&) {
 
 }
 
-void Server::handleUser(Client&, const ParsedCommand&) {
-
+void Server::handleUser(Client& client, const ParsedCommand& cmd) {
+	if (cmd.args.size() != 4) {
+		std::cout << "Client " << client.getFd() << " sent invalid USER command." << std::endl;
+		return;
+	}
+	if (cmd.args[0].empty() || cmd.args[1].empty() || cmd.args[2].empty() || cmd.args[3].empty()) {
+		std::cout << "Client " << client.getFd() << " sent invalid USER command." << std::endl;
+		return;
+	}
+	client.getUser().username = cmd.args[0];
+	client.getUser().hostname = cmd.args[1];
+	client.getUser().servername = cmd.args[2];
+	client.getUser().realname = cmd.args[3];
 }
 
 void Server::handleJoin(Client&, const ParsedCommand&) {
