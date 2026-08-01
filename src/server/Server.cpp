@@ -1,5 +1,20 @@
 #include "Server.hpp"
 
+static const CommandEntry g_commands[] =
+{
+    { "PASS", &Server::handlePass },
+    { "NICK", &Server::handleNick },
+    { "USER", &Server::handleUser },
+    { "JOIN", &Server::handleJoin },
+    { "PART", &Server::handlePart },
+    { "MODE", &Server::handleMode },
+    { "TOPIC", &Server::handleTopic },
+    { "KICK", &Server::handleKick },
+    { "INVITE", &Server::handleInvite },
+    { "PRIVMSG", &Server::handlePrivmsg },
+	{ "QUIT", &Server::handleQuit }
+};
+
 Server::Server(const std::string& port, const std::string& password) {
 	validatePort(port);
 	validatePassword(password);
@@ -111,8 +126,66 @@ void Server::processClientBuffer(Client& client) {
 		ParsedCommand cmd = parseCommand(line);
 		if (cmd.command.empty())
 			break;
-	    //executeCommand(cmd); TODO
+	    dispatch(client, cmd);
 	}
+}
+
+void Server::handlePass(Client&, const ParsedCommand&) {
+
+}
+
+void Server::handleNick(Client&, const ParsedCommand&) {
+
+}
+
+void Server::handleUser(Client&, const ParsedCommand&) {
+
+}
+
+void Server::handleJoin(Client&, const ParsedCommand&) {
+
+}
+
+void Server::handlePart(Client&, const ParsedCommand&) {
+
+}
+
+void Server::handleMode(Client&, const ParsedCommand&) {
+
+}
+
+void Server::handleTopic(Client&, const ParsedCommand&) {
+
+}
+
+void Server::handleKick(Client&, const ParsedCommand&) {
+
+}
+
+void Server::handleInvite(Client&, const ParsedCommand&) {
+
+}
+
+void Server::handlePrivmsg(Client&, const ParsedCommand&) {
+
+}
+
+void Server::handleQuit(Client&, const ParsedCommand&) {
+
+}
+
+void Server::dispatch(Client& client, const ParsedCommand& cmd)
+{
+    for (size_t i = 0; i < sizeof(g_commands) / sizeof(CommandEntry); ++i)
+    {
+        if (cmd.command == g_commands[i].name)
+        {
+            (this->*g_commands[i].handler)(client, cmd);
+            return;
+        }
+    }
+
+    // TODO: ERR_UNKNOWNCOMMAND
 }
 
 void Server::disconnectClient(Client& client) {

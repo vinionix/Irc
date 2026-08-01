@@ -14,6 +14,11 @@
 #include <netinet/in.h>
 #include <algorithm>
 
+struct ParsedCommand {
+	std::string					command;
+	std::vector<std::string>	args;
+};
+
 class Server {
     private:
 		unsigned int					_port;
@@ -29,18 +34,37 @@ class Server {
 		void	validatePassword(const std::string& password);
 		void	createAndConfigureSocket(void);
 		pollfd	createPollFd(int fd);
-		void 	disconnectClient(Client& client);
-		void	processClientBuffer(Client& c);
+		void 	disconnectClient(Client&);
+		void	processClientBuffer(Client&);
 
     public:
 		Server(const std::string& port, const std::string& password);
+
 		void startPoll(void);
+
+		typedef void (Server::*CommandHandler)(Client&, const ParsedCommand&);
+
+		void handlePass(Client&, const ParsedCommand&);
+    	void handleNick(Client&, const ParsedCommand&);
+    	void handleUser(Client&, const ParsedCommand&);
+    	void handleJoin(Client&, const ParsedCommand&);
+    	void handlePart(Client&, const ParsedCommand&);
+    	void handleMode(Client&, const ParsedCommand&);
+    	void handleTopic(Client&, const ParsedCommand&);
+    	void handleKick(Client&, const ParsedCommand&);
+    	void handleInvite(Client&, const ParsedCommand&);
+    	void handlePrivmsg(Client&, const ParsedCommand&);
+		void handleQuit(Client&, const ParsedCommand&);
+
+    	void dispatch(Client&, const ParsedCommand&);
+
 		~Server();
 };
 
-struct ParsedCommand {
-	std::string					command;
-	std::vector<std::string>	args;
+struct CommandEntry
+{
+    const char*     name;
+    Server::CommandHandler handler;
 };
 
 ParsedCommand	parseCommand(std::string& line);
