@@ -12,6 +12,10 @@ void Client::setPassOk(bool passOk) {
     _passOk = passOk;
 }
 
+Client::User& Client::getUser() {
+    return _user;
+}
+
 std::string Client::getNick() const {
     return _nickname;
 }
