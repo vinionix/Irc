@@ -132,7 +132,7 @@ void Server::processClientBuffer(Client& client) {
 
 void Server::handlePass(Client& client, const ParsedCommand& cmd) {
 	if (cmd.args.empty())
-		return;
+		return; // TODO: error
 	if (cmd.args[0] == _password) {
 		client.setPassOk(true);
 		std::cout << "Client " << client.getFd() << " provided correct password.";
@@ -145,8 +145,52 @@ void Server::handlePass(Client& client, const ParsedCommand& cmd) {
 	}	
 }
 
-void Server::handleNick(Client&, const ParsedCommand&) {
+bool Server::nickAlreadyInUse(const std::string& nick) {
+	for (size_t i = 0; i < _pollFds.size(); i++) {
+		if (nick == _clientFds[_pollFds.at(i).fd].getNick()) {
+			return true;
+		}
+	}
+	return false;
+}
 
+bool Server::invalidNick(const std::string& nick) const {
+    if (nick.empty())
+        return true;
+
+    const std::string special = "[]\\`_^{|}";
+
+    if (!std::isalpha(nick[0]) &&
+        special.find(nick[0]) == std::string::npos)
+        return true;
+
+    for (size_t i = 1; i < nick.length(); ++i)
+    {
+        char c = nick[i];
+
+        if (!std::isalnum(c) &&
+            c != '-' &&
+            special.find(c) == std::string::npos)
+            return true;
+    }
+
+    return false;
+}
+
+void Server::handleNick(Client& client, const ParsedCommand& cmd) {
+	if (cmd.args.empty() || cmd.args.at(0).empty()) {
+		return; // TODO: ERR_NONICKNAMEGIVEN (431)
+	}
+	if (invalidNick(cmd.args.at(0))) {
+		return; // TODO: ERR_ERRONEUSNICKNAME (432)
+	}
+	if (nickAlreadyInUse(cmd.args.at(0))) {
+		return; //TODO: ERR_NICKNAMEINUSE (433)
+	}
+
+	client.setNickname(cmd.args.at(0));
+
+	//tryRegister(client);
 }
 
 void Server::handleUser(Client&, const ParsedCommand&) {
@@ -209,7 +253,7 @@ void Server::disconnectClient(Client& client) {
 		}
 	}
 	for (size_t i = 0; i < _pollFds.size(); i++) {
-		if (_pollFds[i].fd == client.getFd()) {
+		if (_pollFds.at(i).fd == client.getFd()) {
 			_pollFds.erase(_pollFds.begin() + i);
 			break;
 		}
@@ -225,9 +269,9 @@ void Server::startPoll(void) {
 		poll(_pollFds.data(), _pollFds.size(), -1);
 
 		for (size_t i = 0; i < _pollFds.size(); i++) {
-			if (!(_pollFds[i].revents & POLLIN))
+			if (!(_pollFds.at(i).revents & POLLIN))
 				continue;
-			if (_pollFds[i].fd == _serverFd) {
+			if (_pollFds.at(i).fd == _serverFd) {
 				int clientFd;
 
 				if ((clientFd = accept(_serverFd, NULL, NULL)) == -1)
@@ -242,13 +286,13 @@ void Server::startPoll(void) {
 			else {
 				char buffer[512];
 
-				int bytes = recv(_pollFds[i].fd, buffer, sizeof(buffer), 0);
+				int bytes = recv(_pollFds.at(i).fd, buffer, sizeof(buffer), 0);
 
 				if (bytes <= 0)
-					disconnectClient(_clientFds[_pollFds[i].fd]);
+					disconnectClient(_clientFds[_pollFds.at(i).fd]);
 				else {
-					_clientFds[_pollFds[i].fd].inBuffer.append(buffer, bytes);
-					processClientBuffer(_clientFds[_pollFds[i].fd]);
+					_clientFds[_pollFds.at(i).fd].inBuffer.append(buffer, bytes);
+					processClientBuffer(_clientFds[_pollFds.at(i).fd]);
 				}
 			}
 		}

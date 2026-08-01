@@ -36,6 +36,8 @@ class Server {
 		pollfd	createPollFd(int fd);
 		void 	disconnectClient(Client&);
 		void	processClientBuffer(Client&);
+		bool	nickAlreadyInUse(const std::string&);
+		bool	invalidNick(const std::string&) const;
 
     public:
 		Server(const std::string& port, const std::string& password);
