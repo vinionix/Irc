@@ -24,6 +24,18 @@ void Client::setNickname(const std::string& nick) {
     _nickname = nick;
 }
 
+void Client::addChannel(const std::string& channelName) {
+    _channels.insert(channelName);
+}
+
+void Client::removeChannel(const std::string& channelName) {
+    _channels.erase(channelName);
+}
+
+const std::set<std::string>& Client::getChannels() const {
+    return _channels;
+}
+
 Client::Client() : _clientFd(-1), _isRegistered(false), _passOk(false) {
 
 }

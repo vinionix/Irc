@@ -26,10 +26,12 @@ class Client{
         User& getUser();
         void setPassOk(bool passOk);
         bool getPassOk() const;
-        std::string getUsername() const;
-        std::string setUsername(std::string username);
         std::string getNick() const;
         void setNickname(const std::string&);
+
+        void addChannel(const std::string& channelName);
+        void removeChannel(const std::string& channelName);
+        const std::set<std::string>& getChannels() const;
 
         std::string             inBuffer;
         std::string				outBuffer;
