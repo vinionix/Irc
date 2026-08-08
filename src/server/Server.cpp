@@ -335,8 +335,9 @@ void Server::handlePrivmsg(Client&, const ParsedCommand&) {
 
 }
 
-void Server::handleQuit(Client&, const ParsedCommand&) {
-
+void Server::handleQuit(Client& c, const ParsedCommand& cmd) {
+	static_cast<void>(cmd);
+	disconnectClient(c);
 }
 
 void Server::sendToClient(Client& client, const std::string& message) {
