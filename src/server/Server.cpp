@@ -314,8 +314,56 @@ void Server::handleJoin(Client& client, const ParsedCommand& cmd) {
 	}
 }
 
-void Server::handlePart(Client&, const ParsedCommand&) {
+void Server::handlePart(Client& client, const ParsedCommand& cmd) {
+	if (!client.isRegistered()) {
+		sendNumeric(client, ERR_NOTREGISTERED, "PART", "You have not registered");
+		return;
+	}
+	if (cmd.args.empty()) {
+		sendNumeric(client, ERR_NEEDMOREPARAMS, "PART", "Not enough parameters");
+		return;
+	}
 
+	std::string reason = (cmd.args.size() > 1) ? cmd.args[1] : "";
+
+	std::istringstream channelList(cmd.args[0]);
+	std::string channelName;
+
+	while (std::getline(channelList, channelName, ',')) {
+		if (channelName.empty())
+			continue;
+
+		if (channelName[0] != '#' && channelName[0] != '&') {
+			sendNumeric(client, ERR_NOSUCHCHANNEL, channelName, "No such channel");
+			continue;
+		}
+
+		Channel* channel = findChannel(channelName);
+		if (!channel) {
+			sendNumeric(client, ERR_NOSUCHCHANNEL, channelName, "No such channel");
+			continue;
+		}
+		if (!channel->hasClient(client.getFd())) {
+			sendNumeric(client, ERR_NOTONCHANNEL, channelName, "You're not on that channel");
+			continue;
+		}
+
+		std::string partMsg = ":" + client.getNick() + "!" + client.getUser().username
+			+ " PART " + channelName;
+		if (!reason.empty())
+			partMsg += " :" + reason;
+
+		const std::set<int>& users = channel->getUsers();
+		for (std::set<int>::const_iterator it = users.begin(); it != users.end(); ++it) {
+			std::map<int, Client>::iterator clientIt = _clientFds.find(*it);
+			if (clientIt != _clientFds.end()) {
+				sendToClient(clientIt->second, partMsg);
+			}
+		}
+
+		channel->removeClient(client.getFd());
+		client.removeChannel(channelName);
+	}
 }
 
 void Server::handleMode(Client&, const ParsedCommand&) {
