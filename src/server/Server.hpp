@@ -41,6 +41,7 @@ class Server {
 		void	sendToClient(Client& client, const std::string& message);
 		void	sendNumeric(Client& client, const std::string& code,
 							const std::string& params, const std::string& msg);
+		void	tryRegister(Client& client);
 		Channel*	findChannel(const std::string& name);
 
     public:

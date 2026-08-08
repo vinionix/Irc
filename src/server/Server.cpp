@@ -116,7 +116,7 @@ ParsedCommand parseCommand(std::string& line) {
 void Server::processClientBuffer(Client& client) {
 	size_t pos;
 
-	while ((pos = client.inBuffer.find("\r\n")) != std::string::npos) {
+	while (client.getFd() != -1 && (pos = client.inBuffer.find("\r\n")) != std::string::npos) {
 	    std::string line = client.inBuffer.substr(0, pos);
 
 		if (line.empty() || line.at(0) == ':') {
@@ -151,6 +151,7 @@ void Server::handlePass(Client& client, const ParsedCommand& cmd) {
 		disconnectClient(client);
 		return;
 	}
+	tryRegister(client);
 }
 
 bool Server::nickAlreadyInUse(const std::string& nick, int clientFd) {
@@ -200,6 +201,7 @@ void Server::handleNick(Client& client, const ParsedCommand& cmd) {
 	}
 
 	client.setNickname(cmd.args.at(0));
+	tryRegister(client);
 }
 
 void Server::handleUser(Client& client, const ParsedCommand& cmd) {
@@ -219,10 +221,11 @@ void Server::handleUser(Client& client, const ParsedCommand& cmd) {
 	client.getUser().hostname = cmd.args[1];
 	client.getUser().servername = cmd.args[2];
 	client.getUser().realname = cmd.args[3];
+	tryRegister(client);
 }
 
 void Server::handleJoin(Client& client, const ParsedCommand& cmd) {
-	if (client.getNick().empty()) {
+	if (!client.isRegistered()) {
 		sendNumeric(client, ERR_NOTREGISTERED, "JOIN", "You have not registered");
 		return;
 	}
@@ -324,7 +327,7 @@ void Server::handleTopic(Client&, const ParsedCommand&) {
 }
 
 void Server::handleKick(Client& client, const ParsedCommand& cmd) {
-	if (client.getNick().empty()) {
+	if (!client.isRegistered()) {
 		sendNumeric(client, ERR_NOTREGISTERED, "KICK", "You have not registered");
 		return;
 	}
@@ -423,6 +426,20 @@ void Server::sendNumeric(Client& client, const std::string& code,
     send(client.getFd(), response.c_str(), response.length(), 0);
 }
 
+void Server::tryRegister(Client& client) {
+    if (client.isRegistered())
+        return;
+    if (!client.getPassOk() || client.getNick().empty() || client.getUser().username.empty())
+        return;
+    client.setRegistered(true);
+    sendNumeric(client, RPL_WELCOME, "", "Welcome to the Internet Relay Network "
+        + client.getNick() + "!" + client.getUser().username + "@"
+        + client.getUser().hostname);
+    sendNumeric(client, RPL_YOURHOST, "", "Your host is " SERVER_NAME ", running version 1.0");
+    sendNumeric(client, RPL_CREATED, "", "This server was created today");
+    sendNumeric(client, RPL_MYINFO, "", SERVER_NAME " 1.0 o o");
+}
+
 Channel* Server::findChannel(const std::string& name) {
     for (size_t i = 0; i < _channels.size(); i++) {
         if (_channels[i].getName() == name)
@@ -470,7 +487,7 @@ void Server::disconnectClient(Client& client) {
 		}
 	}
 	close(client.getFd());
-	_clientFds.erase(client.getFd());
+	client.setFd(-1);
 }
 
 void Server::startPoll(void) {
@@ -478,6 +495,15 @@ void Server::startPoll(void) {
 
 	while(true) {
 		poll(_pollFds.data(), _pollFds.size(), -1);
+
+		for (std::map<int, Client>::iterator it = _clientFds.begin(); it != _clientFds.end(); ) {
+			if (it->second.getFd() == -1) {
+				std::map<int, Client>::iterator toErase = it;
+				++it;
+				_clientFds.erase(toErase);
+			} else
+				++it;
+		}
 
 		for (size_t i = 0; i < _pollFds.size(); i++) {
 			if (!(_pollFds.at(i).revents & POLLIN))

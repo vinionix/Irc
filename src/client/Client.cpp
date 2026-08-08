@@ -4,12 +4,24 @@ int Client::getFd() const {
     return _clientFd;
 }
 
+void Client::setFd(int fd) {
+    _clientFd = fd;
+}
+
 bool Client::getPassOk() const {
     return _passOk;
 }
 
 void Client::setPassOk(bool passOk) {
     _passOk = passOk;
+}
+
+bool Client::isRegistered() const {
+    return _isRegistered;
+}
+
+void Client::setRegistered(bool registered) {
+    _isRegistered = registered;
 }
 
 Client::User& Client::getUser() {

@@ -23,9 +23,12 @@ class Client{
         ~Client();
 
         int getFd() const;
+        void setFd(int fd);
         User& getUser();
         void setPassOk(bool passOk);
         bool getPassOk() const;
+        bool isRegistered() const;
+        void setRegistered(bool registered);
         std::string getNick() const;
         void setNickname(const std::string&);
 
