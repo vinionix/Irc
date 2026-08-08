@@ -323,8 +323,74 @@ void Server::handleTopic(Client&, const ParsedCommand&) {
 
 }
 
-void Server::handleKick(Client&, const ParsedCommand&) {
+void Server::handleKick(Client& client, const ParsedCommand& cmd) {
+	if (client.getNick().empty()) {
+		sendNumeric(client, ERR_NOTREGISTERED, "KICK", "You have not registered");
+		return;
+	}
+	if (cmd.args.size() < 2) {
+		sendNumeric(client, ERR_NEEDMOREPARAMS, "KICK", "Not enough parameters");
+		return;
+	}
 
+	std::string channelName = cmd.args[0];
+	std::string targetNick = cmd.args[1];
+	std::string reason = (cmd.args.size() > 2) ? cmd.args[2] : targetNick;
+
+	if (channelName[0] != '#' && channelName[0] != '&') {
+		sendNumeric(client, ERR_NOSUCHCHANNEL, channelName, "No such channel");
+		return;
+	}
+
+	Channel* channel = findChannel(channelName);
+	if (!channel) {
+		sendNumeric(client, ERR_NOSUCHCHANNEL, channelName, "No such channel");
+		return;
+	}
+	if (!channel->hasClient(client.getFd())) {
+		sendNumeric(client, ERR_NOTONCHANNEL, channelName, "You're not on that channel");
+		return;
+	}
+	if (!channel->isOperator(client.getFd())) {
+		sendNumeric(client, ERR_CHANOPRIVSNEEDED, channelName,
+			"You're not channel operator");
+		return;
+	}
+
+	int targetFd = -1;
+	const std::set<int>& users = channel->getUsers();
+	for (std::set<int>::const_iterator it = users.begin(); it != users.end(); ++it) {
+		std::map<int, Client>::iterator clientIt = _clientFds.find(*it);
+		if (clientIt != _clientFds.end() && clientIt->second.getNick() == targetNick) {
+			targetFd = *it;
+			break;
+		}
+	}
+
+	if (targetFd == -1) {
+		sendNumeric(client, ERR_USERNOTINCHANNEL, targetNick + " " + channelName,
+			"They aren't on that channel");
+		return;
+	}
+
+	std::string kickMsg = ":" + client.getNick() + "!" + client.getUser().username
+		+ " KICK " + channelName + " " + targetNick + " :" + reason;
+
+	std::map<int, Client>::iterator targetIt = _clientFds.find(targetFd);
+	if (targetIt != _clientFds.end()) {
+		sendToClient(targetIt->second, kickMsg);
+		targetIt->second.removeChannel(channelName);
+	}
+
+	channel->removeClient(targetFd);
+
+	const std::set<int>& allUsers = channel->getUsers();
+	for (std::set<int>::const_iterator it = allUsers.begin(); it != allUsers.end(); ++it) {
+		std::map<int, Client>::iterator clientIt = _clientFds.find(*it);
+		if (clientIt != _clientFds.end()) {
+			sendToClient(clientIt->second, kickMsg);
+		}
+	}
 }
 
 void Server::handleInvite(Client&, const ParsedCommand&) {

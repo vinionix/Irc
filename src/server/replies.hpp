@@ -56,5 +56,6 @@
 # define ERR_INVITEONLYCHAN		"473"
 # define ERR_BANNEDFROMCHAN		"474"
 # define ERR_BADCHANNELKEY			"475"
+# define ERR_CHANOPRIVSNEEDED		"482"
 
 #endif
