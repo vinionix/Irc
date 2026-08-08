@@ -322,8 +322,60 @@ void Server::handleMode(Client&, const ParsedCommand&) {
 
 }
 
-void Server::handleTopic(Client&, const ParsedCommand&) {
+void Server::handleTopic(Client& client, const ParsedCommand& cmd) {
+	if (!client.isRegistered()) {
+		sendNumeric(client, ERR_NOTREGISTERED, "TOPIC", "You have not registered");
+		return;
+	}
+	if (cmd.args.empty()) {
+		sendNumeric(client, ERR_NEEDMOREPARAMS, "TOPIC", "Not enough parameters");
+		return;
+	}
 
+	std::string channelName = cmd.args[0];
+
+	if (channelName[0] != '#' && channelName[0] != '&') {
+		sendNumeric(client, ERR_NOSUCHCHANNEL, channelName, "No such channel");
+		return;
+	}
+
+	Channel* channel = findChannel(channelName);
+	if (!channel) {
+		sendNumeric(client, ERR_NOSUCHCHANNEL, channelName, "No such channel");
+		return;
+	}
+	if (!channel->hasClient(client.getFd())) {
+		sendNumeric(client, ERR_NOTONCHANNEL, channelName, "You're not on that channel");
+		return;
+	}
+
+	if (cmd.args.size() == 1) {
+		if (channel->getTopic().empty()) {
+			sendNumeric(client, RPL_NOTOPIC, channelName, "No topic is set");
+		} else {
+			sendNumeric(client, RPL_TOPIC, channelName, channel->getTopic());
+		}
+		return;
+	}
+
+	if (channel->isTopicRestricted() && !channel->isOperator(client.getFd())) {
+		sendNumeric(client, ERR_CHANOPRIVSNEEDED, channelName,
+			"You're not channel operator");
+		return;
+	}
+
+	channel->setTopic(cmd.args[1]);
+
+	std::string topicMsg = ":" + client.getNick() + "!" + client.getUser().username
+		+ " TOPIC " + channelName + " :" + cmd.args[1];
+
+	const std::set<int>& users = channel->getUsers();
+	for (std::set<int>::const_iterator it = users.begin(); it != users.end(); ++it) {
+		std::map<int, Client>::iterator clientIt = _clientFds.find(*it);
+		if (clientIt != _clientFds.end()) {
+			sendToClient(clientIt->second, topicMsg);
+		}
+	}
 }
 
 void Server::handleKick(Client& client, const ParsedCommand& cmd) {
