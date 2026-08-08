@@ -38,6 +38,8 @@ class Server {
 		void	processClientBuffer(Client&);
 		bool	nickAlreadyInUse(const std::string&, int);
 		bool	invalidNick(const std::string&) const;
+		void	sendToClient(Client& client, const std::string& message);
+		Channel*	findChannel(const std::string& name);
 
     public:
 		Server(const std::string& port, const std::string& password);

@@ -212,8 +212,85 @@ void Server::handleUser(Client& client, const ParsedCommand& cmd) {
 	client.getUser().realname = cmd.args[3];
 }
 
-void Server::handleJoin(Client&, const ParsedCommand&) {
+void Server::handleJoin(Client& client, const ParsedCommand& cmd) {
+	if (client.getNick().empty()) {
+		return; // TODO: ERR_NOTREGISTERED
+	}
+	if (cmd.args.empty() || cmd.args[0].empty()) {
+		return; // TODO: ERR_NEEDMOREPARAMS (461)
+	}
 
+	std::string channelName = cmd.args[0];
+	std::string key = (cmd.args.size() > 1) ? cmd.args[1] : "";
+
+	Channel* channel = findChannel(channelName);
+	bool created = false;
+
+	if (!channel) {
+		_channels.push_back(Channel(channelName));
+		channel = &_channels.back();
+		channel->addClient(client.getFd());
+		channel->addOperator(client.getFd());
+		created = true;
+	}
+	else {
+		if (channel->isInviteOnly() && !channel->isInvited(client.getFd())) {
+			return; // TODO: ERR_INVITEONLYCHAN (473)
+		}
+		if (!channel->getPassword().empty() && channel->getPassword() != key) {
+			return; // TODO: ERR_BADCHANNELKEY (475)
+		}
+		if (channel->getMaxUsers() != -1 &&
+			static_cast<int>(channel->getUsers().size()) >= channel->getMaxUsers()) {
+			return; // TODO: ERR_CHANNELISFULL (471)
+		}
+		if (channel->hasClient(client.getFd())) {
+			return; // TODO: ERR_USERONCHANNEL (443)
+		}
+		channel->addClient(client.getFd());
+	}
+
+	client.addChannel(channelName);
+
+	sendToClient(client, ":" + client.getNick() + "!" + client.getUser().username
+		+ " JOIN " + channelName);
+
+	if (!channel->getTopic().empty()) {
+		sendToClient(client, "332 " + client.getNick() + " " + channelName
+			+ " :" + channel->getTopic());
+	}
+
+	std::string names;
+	const std::set<int>& users = channel->getUsers();
+	for (std::set<int>::const_iterator it = users.begin(); it != users.end(); ++it) {
+		if (it != users.begin())
+			names += " ";
+		if (channel->isOperator(*it)) {
+			names += "@";
+		}
+		std::map<int, Client>::iterator clientIt = _clientFds.find(*it);
+		if (clientIt != _clientFds.end()) {
+			names += clientIt->second.getNick();
+		}
+	}
+
+	sendToClient(client, "353 " + client.getNick() + " = " + channelName
+		+ " :" + names);
+	sendToClient(client, "366 " + client.getNick() + " " + channelName
+		+ " :End of /NAMES list.");
+
+	if (!created) {
+		const std::set<int>& users = channel->getUsers();
+		for (std::set<int>::const_iterator it = users.begin(); it != users.end(); ++it) {
+			if (*it == client.getFd())
+				continue;
+			std::map<int, Client>::iterator clientIt = _clientFds.find(*it);
+			if (clientIt != _clientFds.end()) {
+				sendToClient(clientIt->second, ":" + client.getNick() + "!"
+					+ client.getUser().username + " JOIN " + channelName);
+			}
+		}
+	}
 }
 
 void Server::handlePart(Client&, const ParsedCommand&) {
@@ -242,6 +319,19 @@ void Server::handlePrivmsg(Client&, const ParsedCommand&) {
 
 void Server::handleQuit(Client&, const ParsedCommand&) {
 
+}
+
+void Server::sendToClient(Client& client, const std::string& message) {
+    std::string msg = message + "\r\n";
+    send(client.getFd(), msg.c_str(), msg.length(), 0);
+}
+
+Channel* Server::findChannel(const std::string& name) {
+    for (size_t i = 0; i < _channels.size(); i++) {
+        if (_channels[i].getName() == name)
+            return &_channels[i];
+    }
+    return NULL;
 }
 
 void Server::dispatch(Client& client, const ParsedCommand& cmd)
