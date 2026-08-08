@@ -1,4 +1,5 @@
 #include "Server.hpp"
+#include "replies.hpp"
 
 static const CommandEntry g_commands[] =
 {
@@ -118,8 +119,10 @@ void Server::processClientBuffer(Client& client) {
 	while ((pos = client.inBuffer.find("\r\n")) != std::string::npos) {
 	    std::string line = client.inBuffer.substr(0, pos);
 
-		if (line.empty() || line.at(0) == ':')
-			break; //throw specific error for trailing at command
+		if (line.empty() || line.at(0) == ':') {
+			client.inBuffer.erase(0, pos + 2);
+			continue;
+		}
 
 	    client.inBuffer.erase(0, pos + 2);
 
@@ -132,21 +135,22 @@ void Server::processClientBuffer(Client& client) {
 
 void Server::handlePass(Client& client, const ParsedCommand& cmd) {
 	if (client.getPassOk()) {
-		std::cout << "Client " << client.getFd() << " has already provided a password." << std::endl;
+		sendNumeric(client, ERR_ALREADYREGISTRED, "", "You may not reregister");
 		return;
 	}
-	if (cmd.args.empty())
-		return; // TODO: error
+	if (cmd.args.empty()) {
+		sendNumeric(client, ERR_NEEDMOREPARAMS, "PASS", "Not enough parameters");
+		return;
+	}
 	if (cmd.args[0] == _password) {
 		client.setPassOk(true);
-		std::cout << "Client " << client.getFd() << " provided correct password." << std::endl;
 	}
 	else {
 		client.setPassOk(false);
-		std::cout << "Client " << client.getFd() << " provided incorrect password."	<< std::endl;
+		sendNumeric(client, ERR_PASSWDMISMATCH, "", "Password incorrect");
 		disconnectClient(client);
 		return;
-	}	
+	}
 }
 
 bool Server::nickAlreadyInUse(const std::string& nick, int clientFd) {
@@ -183,27 +187,32 @@ bool Server::invalidNick(const std::string& nick) const {
 
 void Server::handleNick(Client& client, const ParsedCommand& cmd) {
 	if (cmd.args.empty() || cmd.args.at(0).empty()) {
-		return; // TODO: ERR_NONICKNAMEGIVEN (431)
+		sendNumeric(client, ERR_NONICKNAMEGIVEN, "", "No nickname given");
+		return;
 	}
 	if (invalidNick(cmd.args.at(0))) {
-		return; // TODO: ERR_ERRONEUSNICKNAME (432)
+		sendNumeric(client, ERR_ERRONEUSNICKNAME, cmd.args.at(0), "Erroneous Nickname");
+		return;
 	}
 	if (nickAlreadyInUse(cmd.args.at(0), client.getFd())) {
-		return; //TODO: ERR_NICKNAMEINUSE (433)
+		sendNumeric(client, ERR_NICKNAMEINUSE, cmd.args.at(0), "Nickname is already in use");
+		return;
 	}
 
 	client.setNickname(cmd.args.at(0));
-
-	//tryRegister(client);
 }
 
 void Server::handleUser(Client& client, const ParsedCommand& cmd) {
+	if (!client.getUser().username.empty()) {
+		sendNumeric(client, ERR_ALREADYREGISTRED, "", "You may not reregister");
+		return;
+	}
 	if (cmd.args.size() != 4) {
-		std::cout << "Client " << client.getFd() << " sent invalid USER command." << std::endl;
+		sendNumeric(client, ERR_NEEDMOREPARAMS, "USER", "Not enough parameters");
 		return;
 	}
 	if (cmd.args[0].empty() || cmd.args[1].empty() || cmd.args[2].empty() || cmd.args[3].empty()) {
-		std::cout << "Client " << client.getFd() << " sent invalid USER command." << std::endl;
+		sendNumeric(client, ERR_NEEDMOREPARAMS, "USER", "Not enough parameters");
 		return;
 	}
 	client.getUser().username = cmd.args[0];
@@ -214,14 +223,21 @@ void Server::handleUser(Client& client, const ParsedCommand& cmd) {
 
 void Server::handleJoin(Client& client, const ParsedCommand& cmd) {
 	if (client.getNick().empty()) {
-		return; // TODO: ERR_NOTREGISTERED
+		sendNumeric(client, ERR_NOTREGISTERED, "JOIN", "You have not registered");
+		return;
 	}
 	if (cmd.args.empty() || cmd.args[0].empty()) {
-		return; // TODO: ERR_NEEDMOREPARAMS (461)
+		sendNumeric(client, ERR_NEEDMOREPARAMS, "JOIN", "Not enough parameters");
+		return;
 	}
 
 	std::string channelName = cmd.args[0];
 	std::string key = (cmd.args.size() > 1) ? cmd.args[1] : "";
+
+	if (channelName[0] != '#' && channelName[0] != '&') {
+		sendNumeric(client, ERR_NOSUCHCHANNEL, channelName, "No such channel");
+		return;
+	}
 
 	Channel* channel = findChannel(channelName);
 	bool created = false;
@@ -235,17 +251,22 @@ void Server::handleJoin(Client& client, const ParsedCommand& cmd) {
 	}
 	else {
 		if (channel->isInviteOnly() && !channel->isInvited(client.getFd())) {
-			return; // TODO: ERR_INVITEONLYCHAN (473)
+			sendNumeric(client, ERR_INVITEONLYCHAN, channelName, "Cannot join channel (+i)");
+			return;
 		}
 		if (!channel->getPassword().empty() && channel->getPassword() != key) {
-			return; // TODO: ERR_BADCHANNELKEY (475)
+			sendNumeric(client, ERR_BADCHANNELKEY, channelName, "Cannot join channel (+k)");
+			return;
 		}
 		if (channel->getMaxUsers() != -1 &&
 			static_cast<int>(channel->getUsers().size()) >= channel->getMaxUsers()) {
-			return; // TODO: ERR_CHANNELISFULL (471)
+			sendNumeric(client, ERR_CHANNELISFULL, channelName, "Cannot join channel (+l)");
+			return;
 		}
 		if (channel->hasClient(client.getFd())) {
-			return; // TODO: ERR_USERONCHANNEL (443)
+			sendNumeric(client, ERR_USERONCHANNEL, client.getNick() + " " + channelName,
+				"You are already on that channel");
+			return;
 		}
 		channel->addClient(client.getFd());
 	}
@@ -256,8 +277,7 @@ void Server::handleJoin(Client& client, const ParsedCommand& cmd) {
 		+ " JOIN " + channelName);
 
 	if (!channel->getTopic().empty()) {
-		sendToClient(client, "332 " + client.getNick() + " " + channelName
-			+ " :" + channel->getTopic());
+		sendNumeric(client, RPL_TOPIC, channelName, channel->getTopic());
 	}
 
 	std::string names;
@@ -274,10 +294,8 @@ void Server::handleJoin(Client& client, const ParsedCommand& cmd) {
 		}
 	}
 
-	sendToClient(client, "353 " + client.getNick() + " = " + channelName
-		+ " :" + names);
-	sendToClient(client, "366 " + client.getNick() + " " + channelName
-		+ " :End of /NAMES list.");
+	sendNumeric(client, RPL_NAMREPLY, "= " + channelName, names);
+	sendNumeric(client, RPL_ENDOFNAMES, channelName, "End of /NAMES list.");
 
 	if (!created) {
 		const std::set<int>& users = channel->getUsers();
@@ -326,6 +344,18 @@ void Server::sendToClient(Client& client, const std::string& message) {
     send(client.getFd(), msg.c_str(), msg.length(), 0);
 }
 
+void Server::sendNumeric(Client& client, const std::string& code,
+                         const std::string& params, const std::string& msg) {
+    std::string nick = client.getNick().empty() ? "*" : client.getNick();
+    std::string response = ":" SERVER_NAME " " + code + " " + nick;
+    if (!params.empty())
+        response += " " + params;
+    if (!msg.empty())
+        response += " :" + msg;
+    response += "\r\n";
+    send(client.getFd(), response.c_str(), response.length(), 0);
+}
+
 Channel* Server::findChannel(const std::string& name) {
     for (size_t i = 0; i < _channels.size(); i++) {
         if (_channels[i].getName() == name)
@@ -345,15 +375,24 @@ void Server::dispatch(Client& client, const ParsedCommand& cmd)
         }
     }
 
-    // TODO: ERR_UNKNOWNCOMMAND
+    sendNumeric(client, ERR_UNKNOWNCOMMAND, cmd.command, "Unknown command");
 }
 
 void Server::disconnectClient(Client& client) {
 	if (_channels.size() > 0) {
 		for (size_t i = 0; i < _channels.size(); i++) {
 			if (_channels[i].hasClient(client.getFd())) {
+				const std::set<int>& users = _channels[i].getUsers();
+				for (std::set<int>::const_iterator it = users.begin(); it != users.end(); ++it) {
+					if (*it == client.getFd())
+						continue;
+					std::map<int, Client>::iterator clientIt = _clientFds.find(*it);
+					if (clientIt != _clientFds.end()) {
+						sendToClient(clientIt->second, ":" + client.getNick() + "!"
+							+ client.getUser().username + " QUIT :Disconnected");
+					}
+				}
 				_channels[i].removeClient(client.getFd());
-				//Do something to notify the other clients in the channel that this client has disconnected
 			}
 		}
 	}

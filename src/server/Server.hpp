@@ -39,6 +39,8 @@ class Server {
 		bool	nickAlreadyInUse(const std::string&, int);
 		bool	invalidNick(const std::string&) const;
 		void	sendToClient(Client& client, const std::string& message);
+		void	sendNumeric(Client& client, const std::string& code,
+							const std::string& params, const std::string& msg);
 		Channel*	findChannel(const std::string& name);
 
     public:
