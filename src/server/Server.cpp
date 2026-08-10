@@ -500,8 +500,56 @@ void Server::handleInvite(Client&, const ParsedCommand&) {
 
 }
 
-void Server::handlePrivmsg(Client&, const ParsedCommand&) {
+void Server::handlePrivmsg(Client& client, const ParsedCommand& cmd) {
+	if (!client.isRegistered()) {
+		sendNumeric(client, ERR_NOTREGISTERED, "PRIVMSG", "You have not registered");
+		return;
+	}
+	if (cmd.args.empty() || cmd.args[0].empty()) {
+		sendNumeric(client, ERR_NORECIPIENT, "", "No recipient given (PRIVMSG)");
+		return;
+	}
+	if (cmd.args.size() < 2 || cmd.args[1].empty()) {
+		sendNumeric(client, ERR_NOTEXTTOSEND, "", "No text to send");
+		return;
+	}
 
+	std::string target = cmd.args[0];
+	std::string text = cmd.args[1];
+	std::string message = ":" + client.getNick() + "!" + client.getUser().username
+		+ " PRIVMSG " + target + " :" + text;
+
+	if (target[0] == '#' || target[0] == '&') {
+		Channel* channel = findChannel(target);
+		if (!channel) {
+			sendNumeric(client, ERR_NOSUCHCHANNEL, target, "No such channel");
+			return;
+		}
+		if (!channel->hasClient(client.getFd())) {
+			sendNumeric(client, ERR_CANNOTSENDTOCHAN, target, "Cannot send to channel");
+			return;
+		}
+
+		const std::set<int>& users = channel->getUsers();
+		for (std::set<int>::const_iterator it = users.begin(); it != users.end(); ++it) {
+			if (*it == client.getFd())
+				continue;
+			std::map<int, Client>::iterator clientIt = _clientFds.find(*it);
+			if (clientIt != _clientFds.end()) {
+				sendToClient(clientIt->second, message);
+			}
+		}
+		return;
+	}
+
+	for (std::map<int, Client>::iterator it = _clientFds.begin(); it != _clientFds.end(); ++it) {
+		if (it->second.getNick() == target) {
+			sendToClient(it->second, message);
+			return;
+		}
+	}
+
+	sendNumeric(client, ERR_NOSUCHNICK, target, "No such nick/channel");
 }
 
 void Server::handleQuit(Client& c, const ParsedCommand& cmd) {
