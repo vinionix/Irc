@@ -516,6 +516,8 @@ void Server::handlePrivmsg(Client& client, const ParsedCommand& cmd) {
 
 	std::string target = cmd.args[0];
 	std::string text = cmd.args[1];
+	text.erase(std::remove(text.begin(), text.end(), '\r'), text.end());
+	text.erase(std::remove(text.begin(), text.end(), '\n'), text.end());
 	std::string message = ":" + client.getNick() + "!" + client.getUser().username
 		+ " PRIVMSG " + target + " :" + text;
 
