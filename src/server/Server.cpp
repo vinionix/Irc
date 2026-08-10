@@ -496,8 +496,64 @@ void Server::handleKick(Client& client, const ParsedCommand& cmd) {
 	}
 }
 
-void Server::handleInvite(Client&, const ParsedCommand&) {
+void Server::handleInvite(Client& client, const ParsedCommand& cmd) {
+	if (!client.isRegistered()) {
+		sendNumeric(client, ERR_NOTREGISTERED, "INVITE", "You have not registered");
+		return;
+	}
+	if (cmd.args.size() < 2) {
+		sendNumeric(client, ERR_NEEDMOREPARAMS, "INVITE", "Not enough parameters");
+		return;
+	}
 
+	std::string targetNick = cmd.args[0];
+	std::string channelName = cmd.args[1];
+
+	if (channelName[0] != '#' && channelName[0] != '&') {
+		sendNumeric(client, ERR_NOSUCHCHANNEL, channelName, "No such channel");
+		return;
+	}
+
+	Channel* channel = findChannel(channelName);
+	if (!channel) {
+		sendNumeric(client, ERR_NOSUCHCHANNEL, channelName, "No such channel");
+		return;
+	}
+	if (!channel->hasClient(client.getFd())) {
+		sendNumeric(client, ERR_NOTONCHANNEL, channelName, "You're not on that channel");
+		return;
+	}
+	if (channel->isInviteOnly() && !channel->isOperator(client.getFd())) {
+		sendNumeric(client, ERR_CHANOPRIVSNEEDED, channelName,
+			"You're not channel operator");
+		return;
+	}
+
+	int targetFd = -1;
+	for (std::map<int, Client>::iterator it = _clientFds.begin(); it != _clientFds.end(); ++it) {
+		if (it->second.getNick() == targetNick) {
+			targetFd = it->first;
+			break;
+		}
+	}
+
+	if (targetFd == -1) {
+		sendNumeric(client, ERR_NOSUCHNICK, targetNick, "No such nick/channel");
+		return;
+	}
+	if (channel->hasClient(targetFd)) {
+		sendNumeric(client, ERR_USERONCHANNEL, targetNick + " " + channelName,
+			"is already on channel");
+		return;
+	}
+
+	channel->addInvite(targetFd);
+
+	sendNumeric(client, RPL_INVITING, targetNick, channelName);
+
+	Client& targetClient = _clientFds[targetFd];
+	sendToClient(targetClient, ":" + client.getNick() + "!" + client.getUser().username
+		+ " INVITE " + targetNick + " " + channelName);
 }
 
 void Server::handlePrivmsg(Client&, const ParsedCommand&) {
