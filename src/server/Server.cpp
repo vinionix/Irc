@@ -544,14 +544,12 @@ void Server::handlePrivmsg(Client& client, const ParsedCommand& cmd) {
 		return;
 	}
 
-	for (std::map<int, Client>::iterator it = _clientFds.begin(); it != _clientFds.end(); ++it) {
-		if (it->second.getNick() == target) {
-			sendToClient(it->second, message);
-			return;
-		}
+	Client* targetClient = findClientByNick(target);
+	if (!targetClient) {
+		sendNumeric(client, ERR_NOSUCHNICK, target, "No such nick/channel");
+		return;
 	}
-
-	sendNumeric(client, ERR_NOSUCHNICK, target, "No such nick/channel");
+	sendToClient(*targetClient, message);
 }
 
 void Server::handleQuit(Client& c, const ParsedCommand& cmd) {
@@ -594,6 +592,14 @@ Channel* Server::findChannel(const std::string& name) {
     for (size_t i = 0; i < _channels.size(); i++) {
         if (_channels[i].getName() == name)
             return &_channels[i];
+    }
+    return NULL;
+}
+
+Client* Server::findClientByNick(const std::string& nick) {
+    for (std::map<int, Client>::iterator it = _clientFds.begin(); it != _clientFds.end(); ++it) {
+        if (it->second.getNick() == nick)
+            return &it->second;
     }
     return NULL;
 }
