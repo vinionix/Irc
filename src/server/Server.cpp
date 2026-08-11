@@ -529,18 +529,13 @@ void Server::handleInvite(Client& client, const ParsedCommand& cmd) {
 		return;
 	}
 
-	int targetFd = -1;
-	for (std::map<int, Client>::iterator it = _clientFds.begin(); it != _clientFds.end(); ++it) {
-		if (it->second.getNick() == targetNick) {
-			targetFd = it->first;
-			break;
-		}
-	}
-
-	if (targetFd == -1) {
+	Client* targetClient = findClientByNick(targetNick);
+	if (!targetClient) {
 		sendNumeric(client, ERR_NOSUCHNICK, targetNick, "No such nick/channel");
 		return;
 	}
+
+	int targetFd = targetClient->getFd();
 	if (channel->hasClient(targetFd)) {
 		sendNumeric(client, ERR_USERONCHANNEL, targetNick + " " + channelName,
 			"is already on channel");
@@ -551,8 +546,7 @@ void Server::handleInvite(Client& client, const ParsedCommand& cmd) {
 
 	sendNumeric(client, RPL_INVITING, targetNick, channelName);
 
-	Client& targetClient = _clientFds[targetFd];
-	sendToClient(targetClient, ":" + client.getNick() + "!" + client.getUser().username
+	sendToClient(*targetClient, ":" + client.getNick() + "!" + client.getUser().username
 		+ " INVITE " + targetNick + " " + channelName);
 }
 
@@ -600,6 +594,14 @@ Channel* Server::findChannel(const std::string& name) {
     for (size_t i = 0; i < _channels.size(); i++) {
         if (_channels[i].getName() == name)
             return &_channels[i];
+    }
+    return NULL;
+}
+
+Client* Server::findClientByNick(const std::string& nick) {
+    for (std::map<int, Client>::iterator it = _clientFds.begin(); it != _clientFds.end(); ++it) {
+        if (it->second.getNick() == nick)
+            return &it->second;
     }
     return NULL;
 }
