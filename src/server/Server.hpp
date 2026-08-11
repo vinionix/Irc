@@ -43,6 +43,7 @@ class Server {
 							const std::string& params, const std::string& msg);
 		void	tryRegister(Client& client);
 		Channel*	findChannel(const std::string& name);
+		Client*	findClientByNick(const std::string& nick);
 
     public:
 		Server(const std::string& port, const std::string& password);
