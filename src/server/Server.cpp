@@ -250,6 +250,8 @@ void Server::handleJoin(Client& client, const ParsedCommand& cmd) {
 		channel = &_channels.back();
 		channel->addClient(client.getFd());
 		channel->addOperator(client.getFd());
+		if (!key.empty())
+			channel->setPassword(key);
 		created = true;
 	}
 	else {
