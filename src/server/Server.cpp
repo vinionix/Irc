@@ -605,8 +605,10 @@ void Server::handlePrivmsg(Client& client, const ParsedCommand& cmd) {
 }
 
 void Server::handleQuit(Client& c, const ParsedCommand& cmd) {
-	static_cast<void>(cmd);
-	disconnectClient(c);
+	std::string message = "Disconnected";
+	if (!cmd.args.empty() && !cmd.args[0].empty())
+		message = cmd.args[0];
+	disconnectClient(c, message);
 }
 
 void Server::sendToClient(Client& client, const std::string& message) {
@@ -670,7 +672,7 @@ void Server::dispatch(Client& client, const ParsedCommand& cmd)
     sendNumeric(client, ERR_UNKNOWNCOMMAND, cmd.command, "Unknown command");
 }
 
-void Server::disconnectClient(Client& client) {
+void Server::disconnectClient(Client& client, const std::string& message) {
 	if (_channels.size() > 0) {
 		for (size_t i = 0; i < _channels.size(); i++) {
 			if (_channels[i].hasClient(client.getFd())) {
@@ -680,8 +682,8 @@ void Server::disconnectClient(Client& client) {
 						continue;
 					std::map<int, Client>::iterator clientIt = _clientFds.find(*it);
 					if (clientIt != _clientFds.end()) {
-						sendToClient(clientIt->second, ":" + client.getNick() + "!"
-							+ client.getUser().username + " QUIT :Disconnected");
+					sendToClient(clientIt->second, ":" + client.getNick() + "!"
+						+ client.getUser().username + " QUIT :" + message);
 					}
 				}
 				_channels[i].removeClient(client.getFd());

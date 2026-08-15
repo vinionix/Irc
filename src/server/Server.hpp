@@ -34,7 +34,7 @@ class Server {
 		void	validatePassword(const std::string& password);
 		void	createAndConfigureSocket(void);
 		pollfd	createPollFd(int fd);
-		void 	disconnectClient(Client&);
+		void 	disconnectClient(Client&, const std::string& message = "Disconnected");
 		void	processClientBuffer(Client&);
 		bool	nickAlreadyInUse(const std::string&, int);
 		bool	invalidNick(const std::string&) const;
