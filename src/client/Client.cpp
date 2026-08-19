@@ -1,60 +1,80 @@
 #include "Client.hpp"
 
-int Client::getFd() const {
-    return _clientFd;
+Client::Client()
+	: _clientFd(-1), _isRegistered(false), _passOk(false)
+{
 }
 
-void Client::setFd(int fd) {
-    _clientFd = fd;
+Client::Client(int fd)
+	: _clientFd(fd), _isRegistered(false), _passOk(false)
+{
 }
 
-bool Client::getPassOk() const {
-    return _passOk;
+Client::~Client()
+{
 }
 
-void Client::setPassOk(bool passOk) {
-    _passOk = passOk;
+int Client::getFd() const
+{
+	return _clientFd;
 }
 
-bool Client::isRegistered() const {
-    return _isRegistered;
+void Client::setFd(int fd)
+{
+	_clientFd = fd;
 }
 
-void Client::setRegistered(bool registered) {
-    _isRegistered = registered;
+Client::User& Client::getUser()
+{
+	return _user;
 }
 
-Client::User& Client::getUser() {
-    return _user;
+const Client::User& Client::getUser() const
+{
+	return _user;
 }
 
-std::string Client::getNick() const {
-    return _nickname;
+void Client::setPassOk(bool passOk)
+{
+	_passOk = passOk;
 }
 
-void Client::setNickname(const std::string& nick) {
-    _nickname = nick;
+bool Client::getPassOk() const
+{
+	return _passOk;
 }
 
-void Client::addChannel(const std::string& channelName) {
-    _channels.insert(channelName);
+bool Client::isRegistered() const
+{
+	return _isRegistered;
 }
 
-void Client::removeChannel(const std::string& channelName) {
-    _channels.erase(channelName);
+void Client::setRegistered(bool registered)
+{
+	_isRegistered = registered;
 }
 
-const std::set<std::string>& Client::getChannels() const {
-    return _channels;
+std::string Client::getNick() const
+{
+	return _nickname;
 }
 
-Client::Client() : _clientFd(-1), _isRegistered(false), _passOk(false) {
-
+void Client::setNickname(const std::string& nick)
+{
+	_nickname = nick;
 }
 
-Client::Client(int fd) : _clientFd(fd), _isRegistered(false), _passOk(false) {
+void Client::addChannel(const std::string& channelName)
+{
+	_channels.insert(channelName);
 }
 
-Client::~Client() {
+void Client::removeChannel(const std::string& channelName)
+{
+	_channels.erase(channelName);
+}
 
+const std::set<std::string>& Client::getChannels() const
+{
+	return _channels;
 }
