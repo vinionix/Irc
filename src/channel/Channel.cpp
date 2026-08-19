@@ -1,92 +1,117 @@
 #include "Channel.hpp"
 
 Channel::Channel(const std::string& name)
-    : _name(name), _inviteOnly(false), _topicRestricted(false), _maxUsers(-1) {}
-
-Channel::~Channel() {}
-
-const std::string& Channel::getName() const {
-    return _name;
+	: _name(name), _inviteOnly(false), _topicRestricted(false), _maxUsers(-1)
+{
 }
 
-const std::string& Channel::getTopic() const {
-    return _topic;
+Channel::~Channel()
+{
 }
 
-void Channel::setTopic(const std::string& topic) {
-    _topic = topic;
+const std::string& Channel::getName() const
+{
+	return _name;
 }
 
-const std::string& Channel::getPassword() const {
-    return _password;
+const std::string& Channel::getTopic() const
+{
+	return _topic;
 }
 
-void Channel::setPassword(const std::string& password) {
-    _password = password;
+void Channel::setTopic(const std::string& topic)
+{
+	_topic = topic;
 }
 
-bool Channel::isInviteOnly() const {
-    return _inviteOnly;
+const std::string& Channel::getPassword() const
+{
+	return _password;
 }
 
-void Channel::setInviteOnly(bool mode) {
-    _inviteOnly = mode;
+void Channel::setPassword(const std::string& password)
+{
+	_password = password;
 }
 
-bool Channel::isTopicRestricted() const {
-    return _topicRestricted;
+bool Channel::isInviteOnly() const
+{
+	return _inviteOnly;
 }
 
-void Channel::setTopicRestricted(bool mode) {
-    _topicRestricted = mode;
+void Channel::setInviteOnly(bool mode)
+{
+	_inviteOnly = mode;
 }
 
-int Channel::getMaxUsers() const {
-    return _maxUsers;
+bool Channel::isTopicRestricted() const
+{
+	return _topicRestricted;
 }
 
-void Channel::setMaxUsers(int limit) {
-    _maxUsers = limit;
+void Channel::setTopicRestricted(bool mode)
+{
+	_topicRestricted = mode;
 }
 
-void Channel::addClient(int fd) {
-    _users.insert(fd);
+int Channel::getMaxUsers() const
+{
+	return _maxUsers;
 }
 
-void Channel::removeClient(int fd) {
-    _users.erase(fd);
-    _operators.erase(fd);
-    _invitedUsers.erase(fd);
+void Channel::setMaxUsers(int limit)
+{
+	_maxUsers = limit;
 }
 
-bool Channel::hasClient(int fd) const {
-    return _users.find(fd) != _users.end();
+void Channel::addClient(int fd)
+{
+	_users.insert(fd);
 }
 
-const std::set<int>& Channel::getUsers() const {
-    return _users;
+void Channel::removeClient(int fd)
+{
+	_users.erase(fd);
+	_operators.erase(fd);
+	_invitedUsers.erase(fd);
 }
 
-void Channel::addOperator(int fd) {
-    _operators.insert(fd);
+bool Channel::hasClient(int fd) const
+{
+	return _users.find(fd) != _users.end();
 }
 
-void Channel::removeOperator(int fd) {
-    _operators.erase(fd);
+const std::set<int>& Channel::getUsers() const
+{
+	return _users;
 }
 
-bool Channel::isOperator(int fd) const {
-    return _operators.find(fd) != _operators.end();
+void Channel::addOperator(int fd)
+{
+	_operators.insert(fd);
 }
 
-void Channel::addInvite(int fd) {
-    _invitedUsers.insert(fd);
+void Channel::removeOperator(int fd)
+{
+	_operators.erase(fd);
 }
 
-void Channel::removeInvite(int fd) {
-    _invitedUsers.erase(fd);
+bool Channel::isOperator(int fd) const
+{
+	return _operators.find(fd) != _operators.end();
 }
 
-bool Channel::isInvited(int fd) const {
-    return _invitedUsers.find(fd) != _invitedUsers.end();
+void Channel::addInvite(int fd)
+{
+	_invitedUsers.insert(fd);
+}
+
+void Channel::removeInvite(int fd)
+{
+	_invitedUsers.erase(fd);
+}
+
+bool Channel::isInvited(int fd) const
+{
+	return _invitedUsers.find(fd) != _invitedUsers.end();
 }
