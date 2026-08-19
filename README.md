@@ -222,10 +222,10 @@ AI tools were used as a development assistant for specific parts of the project:
   and operator permissions;
 - drafting and reviewing project documentation.
 
-AI-generated suggestions were compiled, exercised with integration tests, and reviewed
-against the project requirements before being kept in the repository. The final project
-must still be understood and defended by its author, and peer review is recommended as
-required by the subject.
+AI-generated suggestions were compiled and exercised with integration tests before being
+kept in the repository. The author is responsible for reviewing, understanding, and
+being able to defend every retained change. Peer review remains an important final
+quality check, as required by the subject.
 
 ## Documentation
 
