@@ -1,138 +1,239 @@
-# IRC Server — C++ / 42 Rio
+*This project has been created as part of the 42 curriculum by vfidelis.*
 
-Servidor IRC desenvolvido em C++ com sockets TCP e multiplexação de I/O usando `poll()`.
+# ft_irc
 
-O projeto faz parte da formação da 42 e trabalha conceitos de redes e sistemas que normalmente ficam escondidos por frameworks de alto nível: sockets, file descriptors, buffers, protocolo textual, estado de clientes, canais e tratamento de múltiplas conexões.
+## Description
 
-## Objetivo
+`ft_irc` is an IRC server written in C++98. The project implements a small but functional
+subset of the IRC protocol and focuses on low-level TCP networking, non-blocking I/O,
+protocol parsing, client state, channel state, and event-driven server design.
 
-Construir um servidor capaz de receber múltiplos clientes simultaneamente, interpretar comandos no estilo IRC e manter o estado necessário para usuários e canais sem criar uma thread por conexão.
-
-## Tecnologias e conceitos
-
-- C++
-- POSIX sockets
-- TCP/IP
-- `poll()`
-- file descriptors
-- parsing de protocolo textual
-- buffers de entrada
-- gerenciamento de clientes e canais
-- comandos e respostas numéricas do IRC
-- Makefile
-
-## Arquitetura
+The executable accepts a listening port and a connection password:
 
 ```text
-Cliente TCP ─┐
-Cliente TCP ─┼─> poll() ─> Server ─> parser ─> dispatcher ─> handlers
-Cliente TCP ─┘                  │
-                               ├── Client state
-                               └── Channel state
+./ircserv <port> <password>
 ```
 
-O servidor mantém o socket de escuta, os clientes conectados, os canais existentes e o conjunto de file descriptors observado pelo `poll()`.
+A client authenticates with `PASS`, chooses a nickname with `NICK`, sends its user
+information with `USER`, and can then join channels and exchange messages.
 
-A árvore principal é separada por domínio:
+The server supports multiple simultaneous clients using a single `poll()` loop. Reads,
+writes, accepts, and the listening socket are all coordinated through that event loop.
+Outgoing IRC replies are queued per client and are only written after `poll()` reports
+`POLLOUT`, so partial writes can be preserved without blocking the server.
 
-```text
-src/
-├── server/
-│   ├── Server.cpp
-│   ├── Server.hpp
-│   └── replies.hpp
-├── client/
-└── channel/
-```
-
-## Comandos identificados na implementação
-
-A interface do `Server` possui handlers dedicados para:
+### Supported commands
 
 - `PASS`
 - `NICK`
 - `USER`
 - `JOIN`
 - `PART`
-- `MODE`
-- `TOPIC`
-- `KICK`
-- `INVITE`
 - `PRIVMSG`
 - `QUIT`
+- `PING`
+- `PONG`
+- `CAP` (minimal compatibility handling)
+- `KICK`
+- `INVITE`
+- `TOPIC`
+- `MODE`
 
-Os comandos são convertidos para uma estrutura com nome + argumentos antes do despacho para o handler apropriado.
+The mandatory channel modes are implemented:
 
-## Como compilar
+- `i` — set/remove invite-only mode
+- `t` — restrict/unrestrict `TOPIC` changes to channel operators
+- `k` — set/remove the channel key
+- `o` — give/take channel operator privileges
+- `l` — set/remove the channel user limit
+
+`MODE` strings are processed from left to right. The active `+` or `-` operation is
+preserved until another sign appears, and parameters are consumed only by modes that
+need them. This supports commands such as:
+
+```text
+MODE #room +it
+MODE #room +kol secret bob 10
+MODE #room +io bob -i
+MODE #room +k-k+k-k one two
+```
+
+### Implementation strategy
+
+The project is separated into three main domain objects:
+
+```text
+Server
+├── listening socket and poll descriptors
+├── connected Client objects
+├── Channel collection
+├── IRC parser and dispatcher
+└── command handlers
+
+Client
+├── socket file descriptor
+├── registration state
+├── nickname and USER data
+├── joined channels
+├── input buffer
+└── output buffer
+
+Channel
+├── name and topic
+├── members
+├── operators
+├── invited users
+├── channel key
+├── invite-only/topic-restricted flags
+└── user limit
+```
+
+TCP is a byte stream, so a single `recv()` is not assumed to contain one complete IRC
+command. Every client has a persistent input buffer. Complete `\r\n` terminated lines
+are extracted and parsed while incomplete data remains buffered for the next read.
+
+The parser separates the command name from parameters and preserves an IRC trailing
+parameter beginning with `:` as one argument, including spaces.
+
+For outgoing data, handlers never call `send()` directly. They append protocol lines to
+the target client's output buffer and enable `POLLOUT` for that descriptor. The event
+loop performs at most one `send()` for a writable event and removes only the bytes that
+were actually transmitted.
+
+The first client that creates a channel becomes its operator. Channel membership,
+operator membership, invitations, keys, limits, and topic restrictions are then enforced
+by the command handlers.
+
+## Instructions
+
+### Requirements
+
+- A C++98-compatible compiler
+- POSIX sockets
+- `poll()`
+- `make`
+- Python 3 only if you want to run the optional automated test suite
+
+### Compilation
 
 ```bash
-git clone https://github.com/vinionix/Irc.git
-cd Irc
 make
 ```
 
-## Como executar
+The project is compiled with:
 
-O programa recebe porta e senha do servidor:
+```text
+-Wall -Wextra -Werror -std=c++98
+```
+
+To rebuild from scratch:
+
+```bash
+make re
+```
+
+To remove object files:
+
+```bash
+make clean
+```
+
+To remove object files and the executable:
+
+```bash
+make fclean
+```
+
+### Execution
 
 ```bash
 ./ircserv <port> <password>
 ```
 
-Exemplo:
+Example:
 
 ```bash
-./ircserv 6667 minha_senha
+./ircserv 6667 secret
 ```
 
-O nome exato do executável pode ser confirmado no `Makefile` caso seja alterado durante o desenvolvimento.
+### Testing with netcat
 
-## O que torna esse projeto interessante
+Connect:
 
-A parte difícil não é apenas abrir um socket. O servidor precisa manter consistência enquanto vários clientes enviam dados em momentos diferentes.
+```bash
+nc -C 127.0.0.1 6667
+```
 
-Entre os desafios estão:
+Register:
 
-- lidar com múltiplos file descriptors sem bloquear o processo;
-- acumular dados quando uma mensagem TCP chega fragmentada;
-- processar múltiplos comandos recebidos de uma vez;
-- manter nicknames únicos;
-- controlar registro/autenticação do cliente;
-- manter membros e operadores de canais;
-- remover corretamente um cliente desconectado;
-- distribuir mensagens sem corromper o estado do servidor.
+```text
+PASS secret
+NICK alice
+USER alice 0 * :Alice Example
+```
 
-## Testes úteis
+Then try:
 
-Para avaliar o servidor de forma mais realista, vale testar:
+```text
+JOIN #general
+PRIVMSG #general :hello
+PING :test
+MODE #general
+```
 
-1. vários clientes conectados ao mesmo tempo;
-2. senha incorreta;
-3. nickname duplicado;
-4. criação e entrada em canais;
-5. mensagens privadas;
-6. comandos de operador;
-7. desconexão abrupta;
-8. comando dividido em mais de um pacote TCP;
-9. vários comandos enviados no mesmo pacote.
+The repository also contains an automated integration suite:
 
-## Status
+```bash
+make test
+```
 
-Projeto em desenvolvimento/validação. A estrutura de servidor, cliente, canal, parsing e handlers de comandos está presente no repositório.
+It covers registration, fragmented input, several commands in one TCP packet, direct
+messages, channel messages, channel modes, operator permissions, invites, keys, limits,
+KICK, PART, QUIT, abrupt disconnections, and a basic multi-client stress scenario.
 
-## O que este projeto demonstra
+### Reference client
 
-- programação de redes em baixo nível;
-- entendimento prático de TCP e sockets;
-- multiplexação com `poll()`;
-- modelagem de estado em um protocolo cliente-servidor;
-- C++ aplicado a sistemas;
-- troubleshooting de concorrência de I/O sem depender de frameworks de rede.
+The selected reference IRC client is **HexChat**. Earlier project milestones were
+validated with HexChat. Because the latest changes include the non-blocking output path
+and the complete `MODE` implementation, a final manual HexChat pass should still be run
+before evaluation. The expected scenarios are listed in `docs/TESTING.md`.
 
-## Documentação
+## Resources
 
-- [Technical Overview](docs/TECHNICAL_OVERVIEW.md) — arquitetura, modelo de rede, responsabilidades e cenários de teste.
+Classic references used for the project:
 
-## Autor
+- RFC 2812 — Internet Relay Chat: Client Protocol
+- RFC 1459 — Internet Relay Chat Protocol
+- Linux/POSIX manual pages for `socket`, `bind`, `listen`, `accept`, `recv`, `send`,
+  `fcntl`, and `poll`
+- 42 `ft_irc` subject, version 11.0
 
-Desenvolvido por [Vinícius Fidelis](https://github.com/vinionix) durante a formação na 42 Rio.
+### AI usage
+
+AI tools were used as a development assistant for specific parts of the project:
+
+- explaining IRC protocol concepts and command syntax;
+- reviewing the architecture of `Server`, `Client`, and `Channel`;
+- helping design and implement the mandatory `MODE` handling;
+- reviewing the network loop against the subject's non-blocking `poll()` requirements;
+- refactoring outgoing messages to use per-client output buffers and `POLLOUT`;
+- drafting and expanding automated integration tests;
+- reviewing edge cases such as partial TCP input, repeated mode changes, disconnects,
+  and operator permissions;
+- drafting and reviewing project documentation.
+
+AI-generated suggestions were compiled and exercised with integration tests before being
+kept in the repository. The author is responsible for reviewing, understanding, and
+being able to defend every retained change. Peer review remains an important final
+quality check, as required by the subject.
+
+## Documentation
+
+- [`docs/TECHNICAL_OVERVIEW.md`](docs/TECHNICAL_OVERVIEW.md) — architecture overview
+- [`docs/TESTING.md`](docs/TESTING.md) — automated and manual validation plan
+- [`docs/DEFENSE_GUIDE.md`](docs/DEFENSE_GUIDE.md) — evaluation walkthrough and likely questions
+
+## Bonus
+
+No bonus feature is implemented. File transfer and bots are intentionally left out so
+the mandatory part can remain the priority.

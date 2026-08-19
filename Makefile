@@ -5,6 +5,8 @@ CXXFLAGS = -Wall -Wextra -Werror -std=c++98
 
 SRCS = main.cpp \
 		src/server/Server.cpp \
+		src/server/Commands.cpp \
+		src/server/Mode.cpp \
 		src/client/Client.cpp \
 		src/channel/Channel.cpp
 
@@ -26,4 +28,7 @@ fclean: clean
 
 re: fclean all
 
-.PHONY: all clean fclean re
+test: all
+	python3 tests/irc_test.py
+
+.PHONY: all clean fclean re test
