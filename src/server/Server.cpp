@@ -3,913 +3,443 @@
 
 static const CommandEntry g_commands[] =
 {
-    { "PASS", &Server::handlePass },
-    { "NICK", &Server::handleNick },
-    { "USER", &Server::handleUser },
-    { "JOIN", &Server::handleJoin },
-    { "PART", &Server::handlePart },
-    { "MODE", &Server::handleMode },
-    { "TOPIC", &Server::handleTopic },
-    { "KICK", &Server::handleKick },
-    { "INVITE", &Server::handleInvite },
-    { "PRIVMSG", &Server::handlePrivmsg },
-	{ "QUIT", &Server::handleQuit }
+	{ "PASS", &Server::handlePass },
+	{ "NICK", &Server::handleNick },
+	{ "USER", &Server::handleUser },
+	{ "JOIN", &Server::handleJoin },
+	{ "PART", &Server::handlePart },
+	{ "MODE", &Server::handleMode },
+	{ "TOPIC", &Server::handleTopic },
+	{ "KICK", &Server::handleKick },
+	{ "INVITE", &Server::handleInvite },
+	{ "PRIVMSG", &Server::handlePrivmsg },
+	{ "QUIT", &Server::handleQuit },
+	{ "PING", &Server::handlePing },
+	{ "PONG", &Server::handlePong },
+	{ "CAP", &Server::handleCap }
 };
 
-Server::Server(const std::string& port, const std::string& password) {
-	validatePort(port);
-	validatePassword(password);
-	createAndConfigureSocket();
-}
-
-void Server::validatePort(const std::string& port) {
-	unsigned int portNum;
-
-	std::istringstream iss(port);
-
-	for (size_t i = 0; i < port.length(); i++) {
-		if (!std::isdigit(port[i])) {
-			throw std::runtime_error("Invalid port number!");
-		}
-	}
-	if (!(iss >> portNum)) {
-		throw std::runtime_error("Invalid port number!");
-	}
-	_port = portNum;
-}
-
-void Server::validatePassword(const std::string& password) {
-	if (!password.length()) {
-		throw std::runtime_error("Invalid password!");
-	}
-	_password = password;
-}
-
-void Server::createAndConfigureSocket() {
-	int opt = 1;
-
-	if ((_serverFd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-		close(_serverFd);
-		throw std::runtime_error("Failed to create socket!");
-	}
-	if (setsockopt(_serverFd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
-		close(_serverFd);
-		throw std::runtime_error("Failed to set socket options!");
-	}
-	_address.sin_family = AF_INET;
-	_address.sin_addr.s_addr = INADDR_ANY;
-	_address.sin_port = htons(_port);
-	if (bind(_serverFd, (struct sockaddr *)&_address, sizeof(_address)) < 0) {
-		close(_serverFd);
-		throw std::runtime_error("Failed to bind socket!");
-	}
-	if (fcntl(_serverFd, F_SETFL, O_NONBLOCK) < 0) {
-		close(_serverFd);
-		throw std::runtime_error("Failed to set socket to non-blocking!");
-	}
-	if (listen(_serverFd, SOMAXCONN) < 0) {
-		close(_serverFd);
-		throw std::runtime_error("Failed to listen on socket!");
-	}
-}
-
-pollfd	Server::createPollFd(int fd) {
-	pollfd pfd;
-				
-	pfd.fd = fd;
-	pfd.events = POLLIN;
-	pfd.revents = 0;
-
-	return (pfd);
-}
-
-ParsedCommand parseCommand(std::string& line) {
-	std::istringstream	iss(line);
+ParsedCommand parseCommand(std::string& line)
+{
 	ParsedCommand		cmd;
+	std::istringstream	iss(line);
 	std::string			token;
 
 	if (!(iss >> cmd.command))
- 	   return cmd;
-
-	size_t trailingPos = line.find(" :");
-
-	while (iss >> token) {
-		if (token.at(0) == ':') {
-			if (trailingPos != std::string::npos)
-				token = line.substr(trailingPos + 2);
+		return cmd;
+	for (size_t i = 0; i < cmd.command.size(); ++i)
+	{
+		cmd.command[i] = static_cast<char>(
+			std::toupper(static_cast<unsigned char>(cmd.command[i])));
+	}
+	while (iss >> token)
+	{
+		if (!token.empty() && token[0] == ':')
+		{
+			size_t pos = line.find(token);
+			if (pos != std::string::npos)
+				token = line.substr(pos + 1);
 			cmd.args.push_back(token);
 			break;
 		}
 		cmd.args.push_back(token);
 	}
-
-	// Temporary logs for commands and arguments
-	std::cout << "command: " << cmd.command << std::endl;
-	for (size_t i = 0; i < cmd.args.size(); i++) {
-		std::cout << "arg: " << cmd.args[i] << std::endl;
-	}
-	std::cout << std::endl;
-
 	return cmd;
 }
 
-void Server::processClientBuffer(Client& client) {
+Server::Server(const std::string& port, const std::string& password)
+	: _serverFd(-1)
+{
+	validatePort(port);
+	validatePassword(password);
+	signal(SIGPIPE, SIG_IGN);
+	createAndConfigureSocket();
+}
+
+Server::~Server()
+{
+	for (std::map<int, Client>::iterator it = _clientFds.begin();
+		it != _clientFds.end(); ++it)
+	{
+		if (it->second.getFd() >= 0)
+			close(it->second.getFd());
+	}
+	if (_serverFd >= 0)
+		close(_serverFd);
+}
+
+void Server::validatePort(const std::string& port)
+{
+	unsigned int		portNum;
+	std::istringstream	iss(port);
+
+	if (port.empty())
+		throw std::runtime_error("Invalid port number!");
+	for (size_t i = 0; i < port.length(); ++i)
+	{
+		if (!std::isdigit(static_cast<unsigned char>(port[i])))
+			throw std::runtime_error("Invalid port number!");
+	}
+	if (!(iss >> portNum) || portNum == 0 || portNum > 65535)
+		throw std::runtime_error("Invalid port number!");
+	_port = portNum;
+}
+
+void Server::validatePassword(const std::string& password)
+{
+	if (password.empty())
+		throw std::runtime_error("Invalid password!");
+	_password = password;
+}
+
+void Server::createAndConfigureSocket()
+{
+	int opt = 1;
+
+	_serverFd = socket(AF_INET, SOCK_STREAM, 0);
+	if (_serverFd < 0)
+		throw std::runtime_error("Failed to create socket!");
+	if (setsockopt(_serverFd, SOL_SOCKET, SO_REUSEADDR,
+			&opt, sizeof(opt)) < 0)
+	{
+		close(_serverFd);
+		_serverFd = -1;
+		throw std::runtime_error("Failed to set socket options!");
+	}
+	_address.sin_family = AF_INET;
+	_address.sin_addr.s_addr = INADDR_ANY;
+	_address.sin_port = htons(_port);
+	if (bind(_serverFd, reinterpret_cast<struct sockaddr*>(&_address),
+			sizeof(_address)) < 0)
+	{
+		close(_serverFd);
+		_serverFd = -1;
+		throw std::runtime_error("Failed to bind socket!");
+	}
+	if (fcntl(_serverFd, F_SETFL, O_NONBLOCK) < 0)
+	{
+		close(_serverFd);
+		_serverFd = -1;
+		throw std::runtime_error("Failed to set socket to non-blocking!");
+	}
+	if (listen(_serverFd, SOMAXCONN) < 0)
+	{
+		close(_serverFd);
+		_serverFd = -1;
+		throw std::runtime_error("Failed to listen on socket!");
+	}
+}
+
+pollfd Server::createPollFd(int fd)
+{
+	pollfd pfd;
+
+	pfd.fd = fd;
+	pfd.events = POLLIN;
+	pfd.revents = 0;
+	return pfd;
+}
+
+void Server::processClientBuffer(Client& client)
+{
 	size_t pos;
 
-	while (client.getFd() != -1 && (pos = client.inBuffer.find("\r\n")) != std::string::npos) {
-	    std::string line = client.inBuffer.substr(0, pos);
-
-		if (line.empty() || line.at(0) == ':') {
-			client.inBuffer.erase(0, pos + 2);
+	while (client.getFd() >= 0
+		&& (pos = client.inBuffer.find("\r\n")) != std::string::npos)
+	{
+		std::string line = client.inBuffer.substr(0, pos);
+		client.inBuffer.erase(0, pos + 2);
+		if (line.empty() || line[0] == ':')
 			continue;
-		}
-
-	    client.inBuffer.erase(0, pos + 2);
-
 		ParsedCommand cmd = parseCommand(line);
-		if (cmd.command.empty())
-			break;
-	    dispatch(client, cmd);
+		if (!cmd.command.empty())
+			dispatch(client, cmd);
 	}
 }
 
-void Server::handlePass(Client& client, const ParsedCommand& cmd) {
-	if (client.getPassOk()) {
-		sendNumeric(client, ERR_ALREADYREGISTRED, "", "You may not reregister");
-		return;
-	}
-	if (cmd.args.empty()) {
-		sendNumeric(client, ERR_NEEDMOREPARAMS, "PASS", "Not enough parameters");
-		return;
-	}
-	if (cmd.args[0] == _password) {
-		client.setPassOk(true);
-	}
-	else {
-		client.setPassOk(false);
-		sendNumeric(client, ERR_PASSWDMISMATCH, "", "Password incorrect");
-		disconnectClient(client);
-		return;
-	}
-	tryRegister(client);
+std::string Server::clientPrefix(const Client& client) const
+{
+	std::string username = client.getNick();
+
+	if (!client.getUser().username.empty())
+		username = client.getUser().username;
+	return ":" + client.getNick() + "!" + username + "@localhost";
 }
 
-bool Server::nickAlreadyInUse(const std::string& nick, int clientFd) {
-	for (size_t i = 0; i < _pollFds.size(); i++) {
-		if (nick == _clientFds[_pollFds.at(i).fd].getNick()
-			&& _pollFds.at(i).fd != clientFd) {
-			return true;
-		}
-	}
-	return false;
-}
-
-bool Server::invalidNick(const std::string& nick) const {
-    if (nick.empty())
-        return true;
-
-    const std::string special = "[]\\`_^{|}";
-
-    if (!std::isalpha(nick[0]) &&
-        special.find(nick[0]) == std::string::npos)
-        return true;
-
-    for (size_t i = 1; i < nick.length(); ++i) {
-        char c = nick[i];
-
-        if (!std::isalnum(c) &&
-            c != '-' &&
-            special.find(c) == std::string::npos)
-            return true;
-    }
-
-    return false;
-}
-
-void Server::handleNick(Client& client, const ParsedCommand& cmd) {
-	if (cmd.args.empty() || cmd.args.at(0).empty()) {
-		sendNumeric(client, ERR_NONICKNAMEGIVEN, "", "No nickname given");
+void Server::sendToClient(Client& client, const std::string& message)
+{
+	if (client.getFd() < 0)
 		return;
-	}
-	if (invalidNick(cmd.args.at(0))) {
-		sendNumeric(client, ERR_ERRONEUSNICKNAME, cmd.args.at(0), "Erroneous Nickname");
-		return;
-	}
-	if (nickAlreadyInUse(cmd.args.at(0), client.getFd())) {
-		sendNumeric(client, ERR_NICKNAMEINUSE, cmd.args.at(0), "Nickname is already in use");
-		return;
-	}
-
-	client.setNickname(cmd.args.at(0));
-	tryRegister(client);
-}
-
-void Server::handleUser(Client& client, const ParsedCommand& cmd) {
-	if (!client.getUser().username.empty()) {
-		sendNumeric(client, ERR_ALREADYREGISTRED, "", "You may not reregister");
-		return;
-	}
-	if (cmd.args.size() != 4) {
-		sendNumeric(client, ERR_NEEDMOREPARAMS, "USER", "Not enough parameters");
-		return;
-	}
-	if (cmd.args[0].empty() || cmd.args[1].empty() || cmd.args[2].empty() || cmd.args[3].empty()) {
-		sendNumeric(client, ERR_NEEDMOREPARAMS, "USER", "Not enough parameters");
-		return;
-	}
-	client.getUser().username = cmd.args[0];
-	client.getUser().hostname = cmd.args[1];
-	client.getUser().servername = cmd.args[2];
-	client.getUser().realname = cmd.args[3];
-	tryRegister(client);
-}
-
-void Server::handleJoin(Client& client, const ParsedCommand& cmd) {
-	if (!client.isRegistered()) {
-		sendNumeric(client, ERR_NOTREGISTERED, "JOIN", "You have not registered");
-		return;
-	}
-	if (cmd.args.empty() || cmd.args[0].empty()) {
-		sendNumeric(client, ERR_NEEDMOREPARAMS, "JOIN", "Not enough parameters");
-		return;
-	}
-
-	std::string channelName = cmd.args[0];
-	std::string key = (cmd.args.size() > 1) ? cmd.args[1] : "";
-
-	if (channelName[0] != '#' && channelName[0] != '&') {
-		sendNumeric(client, ERR_NOSUCHCHANNEL, channelName, "No such channel");
-		return;
-	}
-
-	Channel* channel = findChannel(channelName);
-	bool created = false;
-
-	if (!channel) {
-		_channels.push_back(Channel(channelName));
-		channel = &_channels.back();
-		channel->addClient(client.getFd());
-		channel->addOperator(client.getFd());
-		if (!key.empty())
-			channel->setPassword(key);
-		created = true;
-	}
-	else {
-		if (channel->isInviteOnly() && !channel->isInvited(client.getFd())) {
-			sendNumeric(client, ERR_INVITEONLYCHAN, channelName, "Cannot join channel (+i)");
-			return;
-		}
-		if (!channel->getPassword().empty() && channel->getPassword() != key) {
-			sendNumeric(client, ERR_BADCHANNELKEY, channelName, "Cannot join channel (+k)");
-			return;
-		}
-		if (channel->getMaxUsers() != -1 &&
-			static_cast<int>(channel->getUsers().size()) >= channel->getMaxUsers()) {
-			sendNumeric(client, ERR_CHANNELISFULL, channelName, "Cannot join channel (+l)");
-			return;
-		}
-		if (channel->hasClient(client.getFd())) {
-			sendNumeric(client, ERR_USERONCHANNEL, client.getNick() + " " + channelName,
-				"You are already on that channel");
-			return;
-		}
-		channel->addClient(client.getFd());
-	}
-
-	client.addChannel(channelName);
-
-	sendToClient(client, ":" + client.getNick() + "!" + client.getUser().username
-		+ " JOIN " + channelName);
-
-	if (!channel->getTopic().empty()) {
-		sendNumeric(client, RPL_TOPIC, channelName, channel->getTopic());
-	}
-
-	std::string names;
-	const std::set<int>& users = channel->getUsers();
-	for (std::set<int>::const_iterator it = users.begin(); it != users.end(); ++it) {
-		if (it != users.begin())
-			names += " ";
-		if (channel->isOperator(*it)) {
-			names += "@";
-		}
-		std::map<int, Client>::iterator clientIt = _clientFds.find(*it);
-		if (clientIt != _clientFds.end()) {
-			names += clientIt->second.getNick();
-		}
-	}
-
-	sendNumeric(client, RPL_NAMREPLY, "= " + channelName, names);
-	sendNumeric(client, RPL_ENDOFNAMES, channelName, "End of /NAMES list.");
-
-	if (!created) {
-		const std::set<int>& users = channel->getUsers();
-		for (std::set<int>::const_iterator it = users.begin(); it != users.end(); ++it) {
-			if (*it == client.getFd())
-				continue;
-			std::map<int, Client>::iterator clientIt = _clientFds.find(*it);
-			if (clientIt != _clientFds.end()) {
-				sendToClient(clientIt->second, ":" + client.getNick() + "!"
-					+ client.getUser().username + " JOIN " + channelName);
-			}
-		}
-	}
-}
-
-void Server::handlePart(Client& client, const ParsedCommand& cmd) {
-	if (!client.isRegistered()) {
-		sendNumeric(client, ERR_NOTREGISTERED, "PART", "You have not registered");
-		return;
-	}
-	if (cmd.args.empty()) {
-		sendNumeric(client, ERR_NEEDMOREPARAMS, "PART", "Not enough parameters");
-		return;
-	}
-
-	std::string reason = (cmd.args.size() > 1) ? cmd.args[1] : "";
-
-	std::istringstream channelList(cmd.args[0]);
-	std::string channelName;
-
-	while (std::getline(channelList, channelName, ',')) {
-		if (channelName.empty())
-			continue;
-
-		if (channelName[0] != '#' && channelName[0] != '&') {
-			sendNumeric(client, ERR_NOSUCHCHANNEL, channelName, "No such channel");
-			continue;
-		}
-
-		Channel* channel = findChannel(channelName);
-		if (!channel) {
-			sendNumeric(client, ERR_NOSUCHCHANNEL, channelName, "No such channel");
-			continue;
-		}
-		if (!channel->hasClient(client.getFd())) {
-			sendNumeric(client, ERR_NOTONCHANNEL, channelName, "You're not on that channel");
-			continue;
-		}
-
-		std::string partMsg = ":" + client.getNick() + "!" + client.getUser().username
-			+ " PART " + channelName;
-		if (!reason.empty())
-			partMsg += " :" + reason;
-
-		const std::set<int>& users = channel->getUsers();
-		for (std::set<int>::const_iterator it = users.begin(); it != users.end(); ++it) {
-			std::map<int, Client>::iterator clientIt = _clientFds.find(*it);
-			if (clientIt != _clientFds.end()) {
-				sendToClient(clientIt->second, partMsg);
-			}
-		}
-
-		channel->removeClient(client.getFd());
-		client.removeChannel(channelName);
-	}
-}
-
-void Server::handleMode(Client& client, const ParsedCommand& cmd) {
-	if (!client.isRegistered()) {
-		sendNumeric(client, ERR_NOTREGISTERED, "MODE", "You have not registered");
-		return;
-	}
-	if (cmd.args.empty() || cmd.args[0].empty()) {
-		sendNumeric(client, ERR_NEEDMOREPARAMS, "MODE", "Not enough parameters");
-		return;
-	}
-
-	std::string channelName = cmd.args[0];
-	if (channelName[0] != '#' && channelName[0] != '&') {
-		sendNumeric(client, ERR_NOSUCHCHANNEL, channelName, "No such channel");
-		return;
-	}
-
-	Channel* channel = findChannel(channelName);
-	if (!channel) {
-		sendNumeric(client, ERR_NOSUCHCHANNEL, channelName, "No such channel");
-		return;
-	}
-	if (!channel->hasClient(client.getFd())) {
-		sendNumeric(client, ERR_NOTONCHANNEL, channelName, "You're not on that channel");
-		return;
-	}
-
-	if (cmd.args.size() == 1) {
-		std::string modes = "+";
-		std::string params;
-		if (channel->isInviteOnly())
-			modes += "i";
-		if (channel->isTopicRestricted())
-			modes += "t";
-		if (!channel->getPassword().empty()) {
-			modes += "k";
-			params += " " + channel->getPassword();
-		}
-		if (channel->getMaxUsers() != -1) {
-			std::ostringstream limit;
-			limit << channel->getMaxUsers();
-			modes += "l";
-			params += " " + limit.str();
-		}
-		sendNumeric(client, RPL_CHANNELMODEIS,
-			channelName + " " + modes + params, "");
-		return;
-	}
-
-	if (!channel->isOperator(client.getFd())) {
-		sendNumeric(client, ERR_CHANOPRIVSNEEDED, channelName,
-			"You're not channel operator");
-		return;
-	}
-
-	const std::string& modeString = cmd.args[1];
-	char action = 0;
-	size_t argIndex = 2;
-	std::vector<std::string> applied;
-
-	for (size_t i = 0; i < modeString.size(); ++i) {
-		char mode = modeString[i];
-		if (mode == '+' || mode == '-') {
-			action = mode;
-			continue;
-		}
-		if (action == 0) {
-			sendNumeric(client, ERR_UNKNOWNMODE, std::string(1, mode),
-				"is unknown mode char to me");
-			continue;
-		}
-
-		std::string argument;
-		bool changed = false;
-
-		if (mode == 'i') {
-			channel->setInviteOnly(action == '+');
-			changed = true;
-		}
-		else if (mode == 't') {
-			channel->setTopicRestricted(action == '+');
-			changed = true;
-		}
-		else if (mode == 'k') {
-			if (action == '+') {
-				if (argIndex >= cmd.args.size() || cmd.args[argIndex].empty()) {
-					sendNumeric(client, ERR_NEEDMOREPARAMS, "MODE +k",
-						"Not enough parameters");
-					continue;
-				}
-				argument = cmd.args[argIndex++];
-				channel->setPassword(argument);
-			}
-			else
-				channel->setPassword("");
-			changed = true;
-		}
-		else if (mode == 'o') {
-			if (argIndex >= cmd.args.size() || cmd.args[argIndex].empty()) {
-				sendNumeric(client, ERR_NEEDMOREPARAMS, "MODE " + std::string(1, action) + "o",
-					"Not enough parameters");
-				continue;
-			}
-			argument = cmd.args[argIndex++];
-			Client* target = findClientByNick(argument);
-			if (!target) {
-				sendNumeric(client, ERR_NOSUCHNICK, argument, "No such nick/channel");
-				continue;
-			}
-			if (!channel->hasClient(target->getFd())) {
-				sendNumeric(client, ERR_USERNOTINCHANNEL,
-					argument + " " + channelName, "They aren't on that channel");
-				continue;
-			}
-			if (action == '+')
-				channel->addOperator(target->getFd());
-			else
-				channel->removeOperator(target->getFd());
-			changed = true;
-		}
-		else if (mode == 'l') {
-			if (action == '+') {
-				if (argIndex >= cmd.args.size() || cmd.args[argIndex].empty()) {
-					sendNumeric(client, ERR_NEEDMOREPARAMS, "MODE +l",
-						"Not enough parameters");
-					continue;
-				}
-				argument = cmd.args[argIndex++];
-				std::istringstream limitStream(argument);
-				int limit;
-				char extra;
-				if (!(limitStream >> limit) || limit <= 0 || (limitStream >> extra)) {
-					sendNumeric(client, ERR_INVALIDMODEPARAM,
-						channelName + " l " + argument, "Invalid mode parameter");
-					continue;
-				}
-				channel->setMaxUsers(limit);
-			}
-			else
-				channel->setMaxUsers(-1);
-			changed = true;
-		}
-		else {
-			sendNumeric(client, ERR_UNKNOWNMODE, std::string(1, mode),
-				"is unknown mode char to me");
-		}
-
-		if (changed) {
-			std::string change;
-			change += action;
-			change += mode;
-			if (!argument.empty())
-				change += " " + argument;
-			applied.push_back(change);
-		}
-	}
-
-	const std::set<int>& users = channel->getUsers();
-	for (size_t i = 0; i < applied.size(); ++i) {
-		std::string modeMsg = ":" + client.getNick() + "!" + client.getUser().username
-			+ " MODE " + channelName + " " + applied[i];
-		for (std::set<int>::const_iterator it = users.begin(); it != users.end(); ++it) {
-			std::map<int, Client>::iterator clientIt = _clientFds.find(*it);
-			if (clientIt != _clientFds.end())
-				sendToClient(clientIt->second, modeMsg);
-		}
-	}
-}
-
-void Server::handleTopic(Client& client, const ParsedCommand& cmd) {
-	if (!client.isRegistered()) {
-		sendNumeric(client, ERR_NOTREGISTERED, "TOPIC", "You have not registered");
-		return;
-	}
-	if (cmd.args.empty()) {
-		sendNumeric(client, ERR_NEEDMOREPARAMS, "TOPIC", "Not enough parameters");
-		return;
-	}
-
-	std::string channelName = cmd.args[0];
-
-	if (channelName[0] != '#' && channelName[0] != '&') {
-		sendNumeric(client, ERR_NOSUCHCHANNEL, channelName, "No such channel");
-		return;
-	}
-
-	Channel* channel = findChannel(channelName);
-	if (!channel) {
-		sendNumeric(client, ERR_NOSUCHCHANNEL, channelName, "No such channel");
-		return;
-	}
-	if (!channel->hasClient(client.getFd())) {
-		sendNumeric(client, ERR_NOTONCHANNEL, channelName, "You're not on that channel");
-		return;
-	}
-
-	if (cmd.args.size() == 1) {
-		if (channel->getTopic().empty()) {
-			sendNumeric(client, RPL_NOTOPIC, channelName, "No topic is set");
-		} else {
-			sendNumeric(client, RPL_TOPIC, channelName, channel->getTopic());
-		}
-		return;
-	}
-
-	if (channel->isTopicRestricted() && !channel->isOperator(client.getFd())) {
-		sendNumeric(client, ERR_CHANOPRIVSNEEDED, channelName,
-			"You're not channel operator");
-		return;
-	}
-
-	channel->setTopic(cmd.args[1]);
-
-	std::string topicMsg = ":" + client.getNick() + "!" + client.getUser().username
-		+ " TOPIC " + channelName + " :" + cmd.args[1];
-
-	const std::set<int>& users = channel->getUsers();
-	for (std::set<int>::const_iterator it = users.begin(); it != users.end(); ++it) {
-		std::map<int, Client>::iterator clientIt = _clientFds.find(*it);
-		if (clientIt != _clientFds.end()) {
-			sendToClient(clientIt->second, topicMsg);
-		}
-	}
-}
-
-void Server::handleKick(Client& client, const ParsedCommand& cmd) {
-	if (!client.isRegistered()) {
-		sendNumeric(client, ERR_NOTREGISTERED, "KICK", "You have not registered");
-		return;
-	}
-	if (cmd.args.size() < 2) {
-		sendNumeric(client, ERR_NEEDMOREPARAMS, "KICK", "Not enough parameters");
-		return;
-	}
-
-	std::string channelName = cmd.args[0];
-	std::string targetNick = cmd.args[1];
-	std::string reason = (cmd.args.size() > 2) ? cmd.args[2] : targetNick;
-
-	if (channelName[0] != '#' && channelName[0] != '&') {
-		sendNumeric(client, ERR_NOSUCHCHANNEL, channelName, "No such channel");
-		return;
-	}
-
-	Channel* channel = findChannel(channelName);
-	if (!channel) {
-		sendNumeric(client, ERR_NOSUCHCHANNEL, channelName, "No such channel");
-		return;
-	}
-	if (!channel->hasClient(client.getFd())) {
-		sendNumeric(client, ERR_NOTONCHANNEL, channelName, "You're not on that channel");
-		return;
-	}
-	if (!channel->isOperator(client.getFd())) {
-		sendNumeric(client, ERR_CHANOPRIVSNEEDED, channelName,
-			"You're not channel operator");
-		return;
-	}
-
-	int targetFd = -1;
-	const std::set<int>& users = channel->getUsers();
-	for (std::set<int>::const_iterator it = users.begin(); it != users.end(); ++it) {
-		std::map<int, Client>::iterator clientIt = _clientFds.find(*it);
-		if (clientIt != _clientFds.end() && clientIt->second.getNick() == targetNick) {
-			targetFd = *it;
-			break;
-		}
-	}
-
-	if (targetFd == -1) {
-		sendNumeric(client, ERR_USERNOTINCHANNEL, targetNick + " " + channelName,
-			"They aren't on that channel");
-		return;
-	}
-
-	std::string kickMsg = ":" + client.getNick() + "!" + client.getUser().username
-		+ " KICK " + channelName + " " + targetNick + " :" + reason;
-
-	std::map<int, Client>::iterator targetIt = _clientFds.find(targetFd);
-	if (targetIt != _clientFds.end()) {
-		sendToClient(targetIt->second, kickMsg);
-		targetIt->second.removeChannel(channelName);
-	}
-
-	channel->removeClient(targetFd);
-
-	const std::set<int>& allUsers = channel->getUsers();
-	for (std::set<int>::const_iterator it = allUsers.begin(); it != allUsers.end(); ++it) {
-		std::map<int, Client>::iterator clientIt = _clientFds.find(*it);
-		if (clientIt != _clientFds.end()) {
-			sendToClient(clientIt->second, kickMsg);
-		}
-	}
-}
-
-void Server::handleInvite(Client& client, const ParsedCommand& cmd) {
-	if (!client.isRegistered()) {
-		sendNumeric(client, ERR_NOTREGISTERED, "INVITE", "You have not registered");
-		return;
-	}
-	if (cmd.args.size() < 2) {
-		sendNumeric(client, ERR_NEEDMOREPARAMS, "INVITE", "Not enough parameters");
-		return;
-	}
-
-	std::string targetNick = cmd.args[0];
-	std::string channelName = cmd.args[1];
-
-	if (channelName[0] != '#' && channelName[0] != '&') {
-		sendNumeric(client, ERR_NOSUCHCHANNEL, channelName, "No such channel");
-		return;
-	}
-
-	Channel* channel = findChannel(channelName);
-	if (!channel) {
-		sendNumeric(client, ERR_NOSUCHCHANNEL, channelName, "No such channel");
-		return;
-	}
-	if (!channel->hasClient(client.getFd())) {
-		sendNumeric(client, ERR_NOTONCHANNEL, channelName, "You're not on that channel");
-		return;
-	}
-	if (channel->isInviteOnly() && !channel->isOperator(client.getFd())) {
-		sendNumeric(client, ERR_CHANOPRIVSNEEDED, channelName,
-			"You're not channel operator");
-		return;
-	}
-
-	Client* targetClient = findClientByNick(targetNick);
-	if (!targetClient) {
-		sendNumeric(client, ERR_NOSUCHNICK, targetNick, "No such nick/channel");
-		return;
-	}
-
-	int targetFd = targetClient->getFd();
-	if (channel->hasClient(targetFd)) {
-		sendNumeric(client, ERR_USERONCHANNEL, targetNick + " " + channelName,
-			"is already on channel");
-		return;
-	}
-
-	channel->addInvite(targetFd);
-
-	sendNumeric(client, RPL_INVITING, targetNick, channelName);
-
-	sendToClient(*targetClient, ":" + client.getNick() + "!" + client.getUser().username
-		+ " INVITE " + targetNick + " " + channelName);
-}
-
-void Server::handlePrivmsg(Client& client, const ParsedCommand& cmd) {
-	if (!client.isRegistered()) {
-		sendNumeric(client, ERR_NOTREGISTERED, "PRIVMSG", "You have not registered");
-		return;
-	}
-	if (cmd.args.empty() || cmd.args[0].empty()) {
-		sendNumeric(client, ERR_NORECIPIENT, "", "No recipient given (PRIVMSG)");
-		return;
-	}
-	if (cmd.args.size() < 2 || cmd.args[1].empty()) {
-		sendNumeric(client, ERR_NOTEXTTOSEND, "", "No text to send");
-		return;
-	}
-
-	std::string target = cmd.args[0];
-	std::string text = cmd.args[1];
-	text.erase(std::remove(text.begin(), text.end(), '\r'), text.end());
-	text.erase(std::remove(text.begin(), text.end(), '\n'), text.end());
-	std::string message = ":" + client.getNick() + "!" + client.getUser().username
-		+ " PRIVMSG " + target + " :" + text;
-
-	if (target[0] == '#' || target[0] == '&') {
-		Channel* channel = findChannel(target);
-		if (!channel) {
-			sendNumeric(client, ERR_NOSUCHCHANNEL, target, "No such channel");
-			return;
-		}
-		if (!channel->hasClient(client.getFd())) {
-			sendNumeric(client, ERR_CANNOTSENDTOCHAN, target, "Cannot send to channel");
-			return;
-		}
-
-		const std::set<int>& users = channel->getUsers();
-		for (std::set<int>::const_iterator it = users.begin(); it != users.end(); ++it) {
-			if (*it == client.getFd())
-				continue;
-			std::map<int, Client>::iterator clientIt = _clientFds.find(*it);
-			if (clientIt != _clientFds.end()) {
-				sendToClient(clientIt->second, message);
-			}
-		}
-		return;
-	}
-
-	Client* targetClient = findClientByNick(target);
-	if (!targetClient) {
-		sendNumeric(client, ERR_NOSUCHNICK, target, "No such nick/channel");
-		return;
-	}
-	sendToClient(*targetClient, message);
-}
-
-void Server::handleQuit(Client& c, const ParsedCommand& cmd) {
-	std::string message = "Disconnected";
-	if (!cmd.args.empty() && !cmd.args[0].empty())
-		message = cmd.args[0];
-	disconnectClient(c, message);
-}
-
-void Server::sendToClient(Client& client, const std::string& message) {
-    std::string msg = message + "\r\n";
-    send(client.getFd(), msg.c_str(), msg.length(), 0);
+	client.outBuffer += message + "\r\n";
+	setWriteInterest(client.getFd(), true);
 }
 
 void Server::sendNumeric(Client& client, const std::string& code,
-                         const std::string& params, const std::string& msg) {
-    std::string nick = client.getNick().empty() ? "*" : client.getNick();
-    std::string response = ":" SERVER_NAME " " + code + " " + nick;
-    if (!params.empty())
-        response += " " + params;
-    if (!msg.empty())
-        response += " :" + msg;
-    response += "\r\n";
-    send(client.getFd(), response.c_str(), response.length(), 0);
+	const std::string& params, const std::string& msg)
+{
+	std::string nick = client.getNick().empty() ? "*" : client.getNick();
+	std::string response = ":" SERVER_NAME " " + code + " " + nick;
+
+	if (!params.empty())
+		response += " " + params;
+	if (!msg.empty())
+		response += " :" + msg;
+	sendToClient(client, response);
 }
 
-void Server::tryRegister(Client& client) {
-    if (client.isRegistered())
-        return;
-    if (!client.getPassOk() || client.getNick().empty() || client.getUser().username.empty())
-        return;
-    client.setRegistered(true);
-    sendNumeric(client, RPL_WELCOME, "", "Welcome to the Internet Relay Network "
-        + client.getNick() + "!" + client.getUser().username + "@"
-        + client.getUser().hostname);
-    sendNumeric(client, RPL_YOURHOST, "", "Your host is " SERVER_NAME ", running version 1.0");
-    sendNumeric(client, RPL_CREATED, "", "This server was created today");
-    sendNumeric(client, RPL_MYINFO, "", SERVER_NAME " 1.0 o o");
+void Server::tryRegister(Client& client)
+{
+	if (client.isRegistered())
+		return;
+	if (!client.getPassOk() || client.getNick().empty()
+		|| client.getUser().username.empty())
+		return;
+
+	client.setRegistered(true);
+	sendNumeric(client, RPL_WELCOME, "",
+		"Welcome to the Internet Relay Network "
+		+ client.getNick() + "!" + client.getUser().username + "@localhost");
+	sendNumeric(client, RPL_YOURHOST, "",
+		"Your host is " SERVER_NAME ", running version 1.0");
+	sendNumeric(client, RPL_CREATED, "", "This server was created today");
+	sendNumeric(client, RPL_MYINFO, SERVER_NAME " 1.0 o itkol", "");
+	sendNumeric(client, RPL_ISUPPORT,
+		"CHANTYPES=#& PREFIX=(o)@ CHANMODES=,k,l,it",
+		"are supported by this server");
+	sendNumeric(client, RPL_ENDOFMOTD, "", "End of /MOTD command.");
 }
 
-Channel* Server::findChannel(const std::string& name) {
-    for (size_t i = 0; i < _channels.size(); i++) {
-        if (_channels[i].getName() == name)
-            return &_channels[i];
-    }
-    return NULL;
+Channel* Server::findChannel(const std::string& name)
+{
+	for (size_t i = 0; i < _channels.size(); ++i)
+	{
+		if (_channels[i].getName() == name)
+			return &_channels[i];
+	}
+	return NULL;
 }
 
-Client* Server::findClientByNick(const std::string& nick) {
-    for (std::map<int, Client>::iterator it = _clientFds.begin(); it != _clientFds.end(); ++it) {
-        if (it->second.getNick() == nick)
-            return &it->second;
-    }
-    return NULL;
+Client* Server::findClientByNick(const std::string& nick)
+{
+	for (std::map<int, Client>::iterator it = _clientFds.begin();
+		it != _clientFds.end(); ++it)
+	{
+		if (it->second.getFd() >= 0 && it->second.getNick() == nick)
+			return &it->second;
+	}
+	return NULL;
+}
+
+void Server::setWriteInterest(int fd, bool enabled)
+{
+	for (size_t i = 0; i < _pollFds.size(); ++i)
+	{
+		if (_pollFds[i].fd != fd)
+			continue;
+		if (enabled)
+			_pollFds[i].events |= POLLOUT;
+		else
+			_pollFds[i].events &= static_cast<short>(~POLLOUT);
+		return;
+	}
+}
+
+void Server::flushClientOutput(Client& client)
+{
+	if (client.outBuffer.empty())
+	{
+		setWriteInterest(client.getFd(), false);
+		return;
+	}
+
+	ssize_t sent = send(client.getFd(), client.outBuffer.c_str(),
+		client.outBuffer.size(), 0);
+	if (sent > 0)
+		client.outBuffer.erase(0, static_cast<size_t>(sent));
+	else if (sent == 0)
+	{
+		disconnectClient(client);
+		return;
+	}
+	if (client.getFd() >= 0 && client.outBuffer.empty())
+		setWriteInterest(client.getFd(), false);
+}
+
+void Server::removeDisconnectedClients()
+{
+	for (std::map<int, Client>::iterator it = _clientFds.begin();
+		it != _clientFds.end(); )
+	{
+		if (it->second.getFd() < 0)
+		{
+			std::map<int, Client>::iterator dead = it;
+			++it;
+			_clientFds.erase(dead);
+		}
+		else
+			++it;
+	}
+}
+
+void Server::removeEmptyChannels()
+{
+	for (std::vector<Channel>::iterator it = _channels.begin();
+		it != _channels.end(); )
+	{
+		if (it->getUsers().empty())
+			it = _channels.erase(it);
+		else
+			++it;
+	}
+}
+
+void Server::broadcastToChannel(Channel& channel,
+	const std::string& message, int skipFd)
+{
+	const std::set<int>& users = channel.getUsers();
+
+	for (std::set<int>::const_iterator it = users.begin(); it != users.end(); ++it)
+	{
+		if (*it == skipFd)
+			continue;
+		std::map<int, Client>::iterator target = _clientFds.find(*it);
+		if (target != _clientFds.end() && target->second.getFd() >= 0)
+			sendToClient(target->second, message);
+	}
+}
+
+void Server::disconnectClient(Client& client, const std::string& message)
+{
+	int fd = client.getFd();
+
+	if (fd < 0)
+		return;
+
+	std::set<int> recipients;
+	for (size_t i = 0; i < _channels.size(); ++i)
+	{
+		if (!_channels[i].hasClient(fd))
+			continue;
+		const std::set<int>& users = _channels[i].getUsers();
+		for (std::set<int>::const_iterator it = users.begin();
+			it != users.end(); ++it)
+		{
+			if (*it != fd)
+				recipients.insert(*it);
+		}
+	}
+
+	std::string quitMessage = clientPrefix(client) + " QUIT :" + message;
+	for (std::set<int>::iterator it = recipients.begin();
+		it != recipients.end(); ++it)
+	{
+		std::map<int, Client>::iterator target = _clientFds.find(*it);
+		if (target != _clientFds.end() && target->second.getFd() >= 0)
+			sendToClient(target->second, quitMessage);
+	}
+	for (size_t i = 0; i < _channels.size(); ++i)
+		_channels[i].removeClient(fd);
+
+	for (std::vector<pollfd>::iterator it = _pollFds.begin();
+		it != _pollFds.end(); ++it)
+	{
+		if (it->fd == fd)
+		{
+			_pollFds.erase(it);
+			break;
+		}
+	}
+	close(fd);
+	client.setFd(-1);
+	removeEmptyChannels();
+}
+
+void Server::acceptClient()
+{
+	int clientFd = accept(_serverFd, NULL, NULL);
+
+	if (clientFd < 0)
+		return;
+	if (fcntl(clientFd, F_SETFL, O_NONBLOCK) < 0)
+	{
+		close(clientFd);
+		return;
+	}
+	_clientFds.insert(std::make_pair(clientFd, Client(clientFd)));
+	_pollFds.push_back(createPollFd(clientFd));
 }
 
 void Server::dispatch(Client& client, const ParsedCommand& cmd)
 {
-    for (size_t i = 0; i < sizeof(g_commands) / sizeof(CommandEntry); ++i)
-    {
-        if (cmd.command == g_commands[i].name)
-        {
-            (this->*g_commands[i].handler)(client, cmd);
-            return;
-        }
-    }
-
-    sendNumeric(client, ERR_UNKNOWNCOMMAND, cmd.command, "Unknown command");
-}
-
-void Server::disconnectClient(Client& client, const std::string& message) {
-	if (_channels.size() > 0) {
-		for (size_t i = 0; i < _channels.size(); i++) {
-			if (_channels[i].hasClient(client.getFd())) {
-				const std::set<int>& users = _channels[i].getUsers();
-				for (std::set<int>::const_iterator it = users.begin(); it != users.end(); ++it) {
-					if (*it == client.getFd())
-						continue;
-					std::map<int, Client>::iterator clientIt = _clientFds.find(*it);
-					if (clientIt != _clientFds.end()) {
-					sendToClient(clientIt->second, ":" + client.getNick() + "!"
-						+ client.getUser().username + " QUIT :" + message);
-					}
-				}
-				_channels[i].removeClient(client.getFd());
-			}
+	for (size_t i = 0; i < sizeof(g_commands) / sizeof(CommandEntry); ++i)
+	{
+		if (cmd.command == g_commands[i].name)
+		{
+			(this->*g_commands[i].handler)(client, cmd);
+			return;
 		}
 	}
-	for (size_t i = 0; i < _pollFds.size(); i++) {
-		if (_pollFds.at(i).fd == client.getFd()) {
-			_pollFds.erase(_pollFds.begin() + i);
-			break;
-		}
-	}
-	close(client.getFd());
-	client.setFd(-1);
+	sendNumeric(client, ERR_UNKNOWNCOMMAND,
+		cmd.command, "Unknown command");
 }
 
-void Server::startPoll(void) {
+void Server::startPoll()
+{
 	_pollFds.push_back(createPollFd(_serverFd));
 
-	while(true) {
-		poll(_pollFds.data(), _pollFds.size(), -1);
+	while (true)
+	{
+		removeDisconnectedClients();
+		int result = poll(&_pollFds[0], _pollFds.size(), -1);
+		if (result <= 0)
+			continue;
 
-		for (std::map<int, Client>::iterator it = _clientFds.begin(); it != _clientFds.end(); ) {
-			if (it->second.getFd() == -1) {
-				std::map<int, Client>::iterator toErase = it;
-				++it;
-				_clientFds.erase(toErase);
-			} else
-				++it;
-		}
-
-		for (size_t i = 0; i < _pollFds.size(); i++) {
-			if (!(_pollFds.at(i).revents & POLLIN))
+		std::vector<pollfd> ready = _pollFds;
+		for (size_t i = 0; i < ready.size(); ++i)
+		{
+			if (!ready[i].revents)
 				continue;
-			if (_pollFds.at(i).fd == _serverFd) {
-				int clientFd;
-
-				if ((clientFd = accept(_serverFd, NULL, NULL)) == -1)
-					continue;
-
-				Client c(clientFd);
-
-				_clientFds.insert(std::make_pair(clientFd, c));
-
-				_pollFds.push_back(createPollFd(clientFd));
+			if (ready[i].fd == _serverFd)
+			{
+				if (ready[i].revents & POLLIN)
+					acceptClient();
+				continue;
 			}
-			else {
+
+			std::map<int, Client>::iterator it = _clientFds.find(ready[i].fd);
+			if (it == _clientFds.end() || it->second.getFd() < 0)
+				continue;
+			Client& client = it->second;
+
+			if (ready[i].revents & (POLLERR | POLLNVAL))
+			{
+				disconnectClient(client);
+				continue;
+			}
+			if (ready[i].revents & POLLIN)
+			{
 				char buffer[512];
-
-				int bytes = recv(_pollFds.at(i).fd, buffer, sizeof(buffer), 0);
-
-				if (bytes <= 0)
-					disconnectClient(_clientFds[_pollFds.at(i).fd]);
-				else {
-					_clientFds[_pollFds.at(i).fd].inBuffer.append(buffer, bytes);
-					processClientBuffer(_clientFds[_pollFds.at(i).fd]);
+				ssize_t bytes = recv(client.getFd(), buffer, sizeof(buffer), 0);
+				if (bytes == 0)
+				{
+					disconnectClient(client);
+					continue;
+				}
+				if (bytes > 0)
+				{
+					client.inBuffer.append(buffer, static_cast<size_t>(bytes));
+					processClientBuffer(client);
 				}
 			}
+			if (client.getFd() < 0)
+				continue;
+			if (ready[i].revents & POLLHUP)
+			{
+				disconnectClient(client);
+				continue;
+			}
+			if (ready[i].revents & POLLOUT)
+				flushClientOutput(client);
 		}
 	}
-}
-
-Server::~Server() {
-
 }
