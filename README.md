@@ -1,4 +1,4 @@
-*This project has been created as part of the 42 curriculum by vfidelis.*
+*This project has been created as part of the 42 curriculum by vfidelis, gada-sil and yfaustin.*
 
 # ft_irc
 
