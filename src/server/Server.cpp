@@ -368,8 +368,172 @@ void Server::handlePart(Client& client, const ParsedCommand& cmd) {
 	}
 }
 
-void Server::handleMode(Client&, const ParsedCommand&) {
+void Server::handleMode(Client& client, const ParsedCommand& cmd) {
+	if (!client.isRegistered()) {
+		sendNumeric(client, ERR_NOTREGISTERED, "MODE", "You have not registered");
+		return;
+	}
+	if (cmd.args.empty() || cmd.args[0].empty()) {
+		sendNumeric(client, ERR_NEEDMOREPARAMS, "MODE", "Not enough parameters");
+		return;
+	}
 
+	std::string channelName = cmd.args[0];
+	if (channelName[0] != '#' && channelName[0] != '&') {
+		sendNumeric(client, ERR_NOSUCHCHANNEL, channelName, "No such channel");
+		return;
+	}
+
+	Channel* channel = findChannel(channelName);
+	if (!channel) {
+		sendNumeric(client, ERR_NOSUCHCHANNEL, channelName, "No such channel");
+		return;
+	}
+	if (!channel->hasClient(client.getFd())) {
+		sendNumeric(client, ERR_NOTONCHANNEL, channelName, "You're not on that channel");
+		return;
+	}
+
+	if (cmd.args.size() == 1) {
+		std::string modes = "+";
+		std::string params;
+		if (channel->isInviteOnly())
+			modes += "i";
+		if (channel->isTopicRestricted())
+			modes += "t";
+		if (!channel->getPassword().empty()) {
+			modes += "k";
+			params += " " + channel->getPassword();
+		}
+		if (channel->getMaxUsers() != -1) {
+			std::ostringstream limit;
+			limit << channel->getMaxUsers();
+			modes += "l";
+			params += " " + limit.str();
+		}
+		sendNumeric(client, RPL_CHANNELMODEIS,
+			channelName + " " + modes + params, "");
+		return;
+	}
+
+	if (!channel->isOperator(client.getFd())) {
+		sendNumeric(client, ERR_CHANOPRIVSNEEDED, channelName,
+			"You're not channel operator");
+		return;
+	}
+
+	const std::string& modeString = cmd.args[1];
+	char action = 0;
+	size_t argIndex = 2;
+	std::vector<std::string> applied;
+
+	for (size_t i = 0; i < modeString.size(); ++i) {
+		char mode = modeString[i];
+		if (mode == '+' || mode == '-') {
+			action = mode;
+			continue;
+		}
+		if (action == 0) {
+			sendNumeric(client, ERR_UNKNOWNMODE, std::string(1, mode),
+				"is unknown mode char to me");
+			continue;
+		}
+
+		std::string argument;
+		bool changed = false;
+
+		if (mode == 'i') {
+			channel->setInviteOnly(action == '+');
+			changed = true;
+		}
+		else if (mode == 't') {
+			channel->setTopicRestricted(action == '+');
+			changed = true;
+		}
+		else if (mode == 'k') {
+			if (action == '+') {
+				if (argIndex >= cmd.args.size() || cmd.args[argIndex].empty()) {
+					sendNumeric(client, ERR_NEEDMOREPARAMS, "MODE +k",
+						"Not enough parameters");
+					continue;
+				}
+				argument = cmd.args[argIndex++];
+				channel->setPassword(argument);
+			}
+			else
+				channel->setPassword("");
+			changed = true;
+		}
+		else if (mode == 'o') {
+			if (argIndex >= cmd.args.size() || cmd.args[argIndex].empty()) {
+				sendNumeric(client, ERR_NEEDMOREPARAMS, "MODE " + std::string(1, action) + "o",
+					"Not enough parameters");
+				continue;
+			}
+			argument = cmd.args[argIndex++];
+			Client* target = findClientByNick(argument);
+			if (!target) {
+				sendNumeric(client, ERR_NOSUCHNICK, argument, "No such nick/channel");
+				continue;
+			}
+			if (!channel->hasClient(target->getFd())) {
+				sendNumeric(client, ERR_USERNOTINCHANNEL,
+					argument + " " + channelName, "They aren't on that channel");
+				continue;
+			}
+			if (action == '+')
+				channel->addOperator(target->getFd());
+			else
+				channel->removeOperator(target->getFd());
+			changed = true;
+		}
+		else if (mode == 'l') {
+			if (action == '+') {
+				if (argIndex >= cmd.args.size() || cmd.args[argIndex].empty()) {
+					sendNumeric(client, ERR_NEEDMOREPARAMS, "MODE +l",
+						"Not enough parameters");
+					continue;
+				}
+				argument = cmd.args[argIndex++];
+				std::istringstream limitStream(argument);
+				int limit;
+				char extra;
+				if (!(limitStream >> limit) || limit <= 0 || (limitStream >> extra)) {
+					sendNumeric(client, ERR_INVALIDMODEPARAM,
+						channelName + " l " + argument, "Invalid mode parameter");
+					continue;
+				}
+				channel->setMaxUsers(limit);
+			}
+			else
+				channel->setMaxUsers(-1);
+			changed = true;
+		}
+		else {
+			sendNumeric(client, ERR_UNKNOWNMODE, std::string(1, mode),
+				"is unknown mode char to me");
+		}
+
+		if (changed) {
+			std::string change;
+			change += action;
+			change += mode;
+			if (!argument.empty())
+				change += " " + argument;
+			applied.push_back(change);
+		}
+	}
+
+	const std::set<int>& users = channel->getUsers();
+	for (size_t i = 0; i < applied.size(); ++i) {
+		std::string modeMsg = ":" + client.getNick() + "!" + client.getUser().username
+			+ " MODE " + channelName + " " + applied[i];
+		for (std::set<int>::const_iterator it = users.begin(); it != users.end(); ++it) {
+			std::map<int, Client>::iterator clientIt = _clientFds.find(*it);
+			if (clientIt != _clientFds.end())
+				sendToClient(clientIt->second, modeMsg);
+		}
+	}
 }
 
 void Server::handleTopic(Client& client, const ParsedCommand& cmd) {
